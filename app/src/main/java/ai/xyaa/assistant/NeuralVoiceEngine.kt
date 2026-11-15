@@ -55,10 +55,32 @@ class NeuralVoiceEngine(private val context: Context, private val onStatus: (Str
                 try {
                     connection.connect()
                     if (connection.responseCode !in 200..299) error("Model download failed: HTTP ${connection.responseCode}")
-                    connection.inputStream.use { input -> FileOutputStream(archive).use { output -> input.copyTo(output, 131072) } }
+                    val total = connection.contentLengthLong
+                    connection.inputStream.use { input ->
+                        FileOutputStream(archive).use { output ->
+                            val buffer = ByteArray(131072)
+                            var downloaded = 0L
+                            var lastUpdate = 0L
+                            while (true) {
+                                val count = input.read(buffer)
+                                if (count < 0) break
+                                output.write(buffer, 0, count)
+                                downloaded += count
+                                if (downloaded - lastUpdate >= 5L * 1024 * 1024) {
+                                    val percent = if (total > 0) " (${downloaded * 100 / total}%)" else ""
+                                    onStatus("Downloading neural voice: ${downloaded / (1024 * 1024)} MB${if (total > 0) " / ${total / (1024 * 1024)} MB" else ""}$percent")
+                                    lastUpdate = downloaded
+                                }
+                            }
+                            output.fd.sync()
+                        }
+                    }
                 } finally { connection.disconnect() }
-                onStatus("Installing neural voice model…")
-                extractSafely(archive, modelRoot)
+                check(archive.isFile && archive.length() > 1024 * 1024) { "Voice model download was incomplete. Please retry." }
+                onStatus("Installing neural voice model… preparing archive")
+                extractSafely(archive, modelRoot) { extracted, fileName ->
+                    onStatus("Installing neural voice: ${extracted / (1024 * 1024)} MB extracted · ${fileName.takeLast(42)}")
+                }
                 archive.delete()
                 check(hasModelFiles()) { "Downloaded archive is missing required Kokoro files" }
                 engine = createEngine()
@@ -128,19 +150,40 @@ class NeuralVoiceEngine(private val context: Context, private val onStatus: (Str
     private fun hasModelFiles() = File(modelDir, "model.onnx").isFile && File(modelDir, "voices.bin").isFile &&
         File(modelDir, "tokens.txt").isFile && File(modelDir, "espeak-ng-data").isDirectory
 
-    private fun extractSafely(archive: File, destination: File) {
+    private fun extractSafely(
+        archive: File,
+        destination: File,
+        onProgress: (Long, String) -> Unit
+    ) {
         val root = destination.canonicalFile.toPath()
+        var extracted = 0L
+        var lastUpdate = 0L
         TarArchiveInputStream(BZip2CompressorInputStream(BufferedInputStream(archive.inputStream()))).use { tar ->
             while (true) {
                 val entry = tar.nextTarEntry ?: break
                 val output = File(destination, entry.name).canonicalFile
                 require(output.toPath().startsWith(root)) { "Unsafe path in voice model archive" }
-                if (entry.isDirectory) output.mkdirs() else if (entry.isFile) {
+                if (entry.isDirectory) {
+                    output.mkdirs()
+                } else if (entry.isFile) {
                     output.parentFile?.mkdirs()
-                    FileOutputStream(output).use { tar.copyTo(it, 131072) }
+                    FileOutputStream(output).use { sink ->
+                        val buffer = ByteArray(131072)
+                        while (true) {
+                            val count = tar.read(buffer)
+                            if (count < 0) break
+                            sink.write(buffer, 0, count)
+                            extracted += count
+                            if (extracted - lastUpdate >= 8L * 1024 * 1024) {
+                                onProgress(extracted, entry.name)
+                                lastUpdate = extracted
+                            }
+                        }
+                    }
                 }
             }
         }
+        onProgress(extracted, "finalizing")
     }
 
     fun close() {
