@@ -149,10 +149,20 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                             // Gemini's final event or for offline neural synthesis of the full reply.
                             while (true) {
                                 val current = speechBuffer.toString()
-                                val boundary = Regex("[.!?][\\s\\n]+").find(current) ?: break
-                                val end = boundary.range.first + 1
-                                speakStreamChunk(current.substring(0, end))
-                                speechBuffer.delete(0, boundary.range.last + 1)
+                                val boundary = Regex("[,;.!?][\\s\\n]+").find(current)
+                                if (boundary != null) {
+                                    val wordsBeforeBoundary = current.substring(0, boundary.range.first).trim().split(Regex("\\s+")).size
+                                    if (boundary.value.first() == ',' && wordsBeforeBoundary < 5) break
+                                    val end = boundary.range.first + 1
+                                    speakStreamChunk(current.substring(0, end))
+                                    speechBuffer.delete(0, boundary.range.last + 1)
+                                    continue
+                                }
+                                val tenthWord = Regex("^(?:\\S+\\s+){9}\\S+").find(current) ?: break
+                                val cut = tenthWord.range.last + 1
+                                if (cut >= current.length) break
+                                speakStreamChunk(current.substring(0, cut))
+                                speechBuffer.delete(0, cut)
                             }
                         }
                         runOnUiThread { answer(partial, false) }
