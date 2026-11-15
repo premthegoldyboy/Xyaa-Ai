@@ -39,9 +39,37 @@ function setMic(on){$('mic').classList.toggle('active',on);$('mic').setAttribute
 function stopListen(){clearTimeout(restart);if(recognition){try{recognition.onend=null;recognition.stop()}catch{}}recognition=null;listening=false;setMic(false)}
 function loadVoices(){voices=speechSynthesis.getVoices();const s=$('voice'),v=cfg.voice;s.replaceChildren(new Option('Automatic',''));voices.forEach(x=>s.add(new Option(x.name+' ('+x.lang+')',x.name)));s.value=voices.some(x=>x.name===v)?v:''}
 if('speechSynthesis'in window){speechSynthesis.onvoiceschanged=loadVoices;loadVoices()}
-function speak(text){if(!('speechSynthesis'in window))return Promise.resolve();return new Promise(resolve=>{let done=false;const finish=()=>{if(done)return;done=true;speaking=false;resolve()};try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);const v=voices.find(x=>x.name===cfg.voice)||voices.find(x=>x.lang.toLowerCase()===cfg.lang.toLowerCase())||voices.find(x=>x.lang.toLowerCase().startsWith(cfg.lang.slice(0,2)));if(v){u.voice=v;u.lang=v.lang}else u.lang=cfg.lang;u.onend=finish;u.onerror=finish;speaking=true;speechSynthesis.speak(u);setTimeout(finish,Math.min(45000,Math.max(8000,text.length*120)))}catch{finish()}})}
+function speechText(text){
+  return String(text)
+    .replace(/\bXYAA\b/gi,'Zyaa')
+    .replace(/\*\*(.*?)\*\*/g,'$1')
+    .replace(/\*(.*?)\*/g,'$1')
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g,'$1')
+    .replace(/https?:\/\/\S+/g,'a link')
+    .replace(/\s+/g,' ')
+    .trim();
+}
+function speak(text){
+  if(!('speechSynthesis'in window))return Promise.resolve();
+  const spoken=speechText(text);
+  if(!spoken)return Promise.resolve();
+  return new Promise(resolve=>{
+    let done=false;
+    const finish=()=>{if(done)return;done=true;speaking=false;resolve()};
+    try{
+      window.speechSynthesis.cancel();
+      const u=new SpeechSynthesisUtterance(spoken);
+      const v=voices.find(x=>x.name===cfg.voice)||voices.find(x=>x.lang.toLowerCase()===cfg.lang.toLowerCase())||voices.find(x=>x.lang.toLowerCase().startsWith(cfg.lang.slice(0,2)));
+      if(v){u.voice=v;u.lang=v.lang}else u.lang=cfg.lang;
+      u.rate=1.02;u.pitch=1.04;u.volume=1;
+      u.onend=finish;u.onerror=finish;speaking=true;
+      window.speechSynthesis.speak(u);
+      setTimeout(finish,Math.min(60000,Math.max(10000,spoken.length*150)));
+    }catch{finish()}
+  });
+}
 function listen(){if(!SpeechRecognition){sayBubble('assistant','Voice recognition is not supported in this browser. Try Chrome.');$('handsfree').checked=false;return}if(listening||busy||speaking)return;const id=session,r=new SpeechRecognition();recognition=r;r.lang=cfg.lang;r.interimResults=false;r.maxAlternatives=1;r.onstart=()=>{if(id!==session){try{r.stop()}catch{};return}listening=true;setMic(true);status('Listening…')};r.onresult=e=>{const t=e.results?.[0]?.[0]?.transcript?.trim();if(t&&id===session){stopListen();handle(t)}};r.onerror=e=>{listening=false;setMic(false);if(e.error==='not-allowed'||e.error==='service-not-allowed'){$('handsfree').checked=false;sayBubble('assistant','Microphone permission denied. Allow microphone access in browser site settings.')}else if(!['no-speech','aborted'].includes(e.error))status('Voice input unavailable')};r.onend=()=>{if(recognition===r)recognition=null;listening=false;setMic(false);if(id===session&&$('handsfree').checked&&!busy&&!speaking)restart=setTimeout(listen,700);else if(!busy&&!speaking)status('Ready')};try{r.start()}catch{recognition=null;status('Ready')}}
-function systemPrompt(){return 'You are XYAA, a helpful concise voice assistant for '+cfg.user+'. Reply in the language the user uses. Return ONLY JSON: {"reply":"...","action":"none|open_url|search|youtube|call|whatsapp|timer|time","arg":"..."}. Use none unless a clear action is requested. open_url arg must be http/https URL. call/whatsapp arg is phone number. timer arg is integer seconds. Never claim an action happened unless it did.'}
+function systemPrompt(){return 'You are XYAA (pronounced “Zyaa”), a natural, warm, conversational voice assistant for '+cfg.user+'. Speak like a helpful person, not a text reader. Keep spoken replies concise and natural, use contractions where appropriate, avoid markdown, bullet lists, decorative symbols, stage directions, and unnecessary repetition. Do not spell out your own name letter by letter; say “Zyaa”. Reply in the language the user uses. Return ONLY JSON: {"reply":"...","action":"none|open_url|search|youtube|call|whatsapp|timer|time","arg":"..."}. Use none unless a clear action is requested. open_url arg must be http/https URL. call/whatsapp arg is phone number. timer arg is integer seconds. Never claim an action happened unless it did.'}
 async function ask(text){if(!cfg.key)throw Error('NO_KEY');const pending=[...turns,{role:'user',parts:[{text}]}].slice(-12);const url='https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(cfg.model)+':generateContent?key='+encodeURIComponent(cfg.key);const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({systemInstruction:{parts:[{text:systemPrompt()}]},contents:pending,generationConfig:{responseMimeType:'application/json',temperature:.65}})});let data;try{data=await res.json()}catch{throw Error('BAD_RESPONSE')}if(!res.ok)throw Error(data?.error?.message||'HTTP '+res.status);const raw=data?.candidates?.[0]?.content?.parts?.map(p=>p.text||'').join('').trim();if(!raw)throw Error('EMPTY');let obj;try{obj=JSON.parse(raw)}catch{throw Error('BAD_JSON')}if(!obj||typeof obj.reply!=='string')throw Error('BAD_FORMAT');turns=[...pending,{role:'model',parts:[{text:raw}]}].slice(-12);if(!['none','open_url','search','youtube','call','whatsapp','timer','time'].includes(obj.action))obj.action='none';return {reply:obj.reply,action:obj.action,arg:String(obj.arg??'')}}
 function openSafe(url){const w=window.open(url,'_blank','noopener,noreferrer');if(!w)sayBubble('assistant','Pop-up blocked. Allow pop-ups for XYAA to open this link.')}
 function act(a,arg){const v=String(arg).trim();if(a==='open_url'){try{const u=new URL(v.includes('://')?v:'https://'+v);if(!['https:','http:'].includes(u.protocol))throw 0;openSafe(u.href)}catch{sayBubble('assistant','That web address is invalid.')}return ''}
