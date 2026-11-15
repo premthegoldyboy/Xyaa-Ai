@@ -105,9 +105,14 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         }
         answer("Connecting to Gemini…", false)
         Thread {
-            val response = runCatching { askGemini(key, prompt) { status ->
-                runOnUiThread { answer(status, false) }
-            } }.getOrElse { formatAiError(it) }
+            val response = runCatching {
+                askGemini(
+                    key,
+                    prompt,
+                    onStatus = { status -> runOnUiThread { answer(status, false) } },
+                    onText = { partial -> runOnUiThread { answer(partial, false) } }
+                )
+            }.getOrElse { formatAiError(it) }
             runOnUiThread {
                 answer(response, true)
                 say(response)
@@ -150,7 +155,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             return cachedGeminiModels
         }
         val preferred = listOf(
-            "gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-3.7-flash",
+            "gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-3.7-flash",
             "gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.1-flash-lite",
             "gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash",
             "gemini-2.0-flash-lite"
@@ -190,25 +195,39 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         return result
     }
 
-    private fun askGemini(apiKey: String, prompt: String, onStatus: (String) -> Unit): String {
-        val models = discoverGeminiModels(apiKey)
+    private fun askGemini(
+        apiKey: String,
+        prompt: String,
+        onStatus: (String) -> Unit,
+        onText: (String) -> Unit
+    ): String {
+        // Keep model discovery off the critical path: first-token latency matters most.
+        val fastFallback = listOf(
+            "gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-3.7-flash",
+            "gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.1-flash-lite"
+        )
+        val now = System.currentTimeMillis()
+        val cached = cachedGeminiModels.takeIf {
+            it.isNotEmpty() && now - modelCacheTimeMs < 6 * 60 * 60 * 1000L
+        }
+        val models = (cached ?: fastFallback).take(3)
+        if (cached == null) Thread { runCatching { discoverGeminiModels(apiKey) } }.start()
+
         var lastError: Throwable? = null
         models.forEachIndexed { index, model ->
-            onStatus("Trying Gemini " + (index + 1) + "/" + models.size + ": " + model + "…")
+            onStatus("Connecting to Gemini…")
             try {
-                return requestGemini(apiKey, prompt, model)
+                return requestGemini(apiKey, prompt, model, onText)
             } catch (error: Throwable) {
                 lastError = error
                 if (!isTemporaryAiFailure(error) && !isUnavailableModel(error)) throw error
                 if (index < models.lastIndex) {
-                    onStatus(model + " is slow or unavailable. Switching to " + models[index + 1] + "…")
+                    onText("")
+                    onStatus("Switching to another fast Gemini model…")
                 }
             }
         }
-        throw IllegalStateException(
-            "Every available Gemini text model was busy or unavailable. XYAA tried " + models.size + " models. Please retry in a moment.",
-            lastError
-        )
+        throw IllegalStateException("Fast Gemini models were busy or unavailable. Please retry in a moment.", lastError)
     }
 
     private fun isUnavailableModel(error: Throwable): Boolean {
@@ -225,44 +244,62 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         return Regex("HTTP (408|429|500|502|503|504)\\b").containsMatchIn(error.message.orEmpty())
     }
 
-    private fun requestGemini(apiKey: String, prompt: String, model: String): String {
-        val endpoint = URL("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent")
+    private fun requestGemini(
+        apiKey: String,
+        prompt: String,
+        model: String,
+        onText: (String) -> Unit
+    ): String {
+        val endpoint = URL("https://generativelanguage.googleapis.com/v1beta/models/$model:streamGenerateContent?alt=sse")
         val connection = (endpoint.openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
-            connectTimeout = 7000
-            readTimeout = 9000
+            connectTimeout = 5000
+            readTimeout = 12000
             doOutput = true
+            setRequestProperty("Accept", "text/event-stream")
             setRequestProperty("Content-Type", "application/json")
             setRequestProperty("x-goog-api-key", apiKey.trim())
         }
         try {
             val body = JSONObject()
                 .put("system_instruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text",
-                    "You are XYAA, a helpful, warm, concise Android assistant. Your name is pronounced Zyaa, never spell it letter by letter. Be honest about actions you cannot perform. Never claim an action succeeded unless the app confirms it."))))
+                    "You are XYAA, a helpful Android assistant. Be concise and direct. Pronounce XYAA as Zyaa. Be honest about actions."))))
                 .put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", prompt)))))
-                .put("generationConfig", JSONObject().put("temperature", 0.6).put("maxOutputTokens", 450))
+                .put("generationConfig", JSONObject().put("temperature", 0.5).put("maxOutputTokens", 280))
             connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
             val status = connection.responseCode
-            val stream = if (status in 200..299) connection.inputStream else connection.errorStream
-            val payload = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
             if (status !in 200..299) {
+                val payload = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
                 val apiMessage = runCatching {
                     JSONObject(payload).getJSONObject("error").optString("message")
                 }.getOrDefault("")
                 throw IllegalStateException("AI service error: HTTP $status. " + apiMessage.ifBlank { "Google did not provide an explanation." })
             }
-            val json = JSONObject(payload)
-            val candidates = json.optJSONArray("candidates")
-                ?: throw IllegalStateException("AI service error: Google returned no response candidates.")
-            if (candidates.length() == 0) {
-                throw IllegalStateException("AI service error: Google returned an empty response. The request may have been blocked by a safety filter.")
+
+            // Consume Server-Sent Events and render each generated text chunk immediately.
+            val accumulated = StringBuilder()
+            connection.inputStream.bufferedReader(Charsets.UTF_8).use { reader ->
+                while (true) {
+                    val line = reader.readLine() ?: break
+                    if (!line.startsWith("data:")) continue
+                    val data = line.substringAfter("data:").trim()
+                    if (data.isBlank() || data == "[DONE]") continue
+                    val chunk = runCatching { JSONObject(data) }.getOrNull() ?: continue
+                    val candidates = chunk.optJSONArray("candidates") ?: continue
+                    if (candidates.length() == 0) continue
+                    val content = candidates.optJSONObject(0)?.optJSONObject("content") ?: continue
+                    val parts = content.optJSONArray("parts") ?: continue
+                    for (i in 0 until parts.length()) {
+                        val piece = parts.optJSONObject(i)?.optString("text").orEmpty()
+                        if (piece.isNotBlank()) {
+                            accumulated.append(piece)
+                            onText(accumulated.toString())
+                        }
+                    }
+                }
             }
-            val parts = candidates.getJSONObject(0).getJSONObject("content").optJSONArray("parts")
-                ?: throw IllegalStateException("AI service error: Google returned no text.")
-            val responseText = (0 until parts.length()).mapNotNull { index ->
-                parts.optJSONObject(index)?.optString("text")?.takeIf { it.isNotBlank() }
-            }.joinToString("\n").trim()
-            if (responseText.isBlank()) throw IllegalStateException("AI service error: Google returned an empty text response.")
+            val responseText = accumulated.toString().trim()
+            if (responseText.isBlank()) throw IllegalStateException("AI service error: Google returned no streamed text.")
             return responseText
         } finally {
             connection.disconnect()
