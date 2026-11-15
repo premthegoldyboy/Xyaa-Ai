@@ -89,26 +89,27 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         }
     }
 
-    private fun process(prompt: String, answer: (String) -> Unit) {
+    private fun process(prompt: String, answer: (String, Boolean) -> Unit) {
         val local = skills.execute(prompt)
         if (local != null) {
-            answer(local)
+            answer(local, true)
             say(local)
             return
         }
         val key = SecureKeyStore(this).read()
         if (key.isNullOrBlank()) {
             val message = "I can handle built-in skills offline. Add your Gemini API key in Settings to enable open-ended AI conversations."
-            answer(message)
+            answer(message, true)
             say(message)
             return
         }
-        answer("Thinking…")
+        answer("Connecting to Gemini…", false)
         Thread {
-            val response = runCatching { askGemini(key, prompt) }
-                .getOrElse { formatAiError(it) }
+            val response = runCatching { askGemini(key, prompt) { status ->
+                runOnUiThread { answer(status, false) }
+            } }.getOrElse { formatAiError(it) }
             runOnUiThread {
-                answer(response)
+                answer(response, true)
                 say(response)
             }
         }.start()
@@ -139,46 +140,97 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         }
     }
 
-    private fun askGemini(apiKey: String, prompt: String): String {
-        val primary = "gemini-3.8-flash"
-        val fallback = "gemini-3.5-flash-lite"
-        return try {
-            requestGemini(apiKey, prompt, primary)
-        } catch (first: Throwable) {
-            if (!isTemporaryAiFailure(first)) throw first
-            // One short exponential-backoff retry avoids repeatedly hammering an overloaded endpoint.
-            Thread.sleep(700)
+    @Volatile private var cachedGeminiModels: List<String> = emptyList()
+    @Volatile private var modelCacheTimeMs: Long = 0L
+
+    // Discover models enabled for this API key, then prioritize fast, stable text models.
+    private fun discoverGeminiModels(apiKey: String): List<String> {
+        val now = System.currentTimeMillis()
+        if (cachedGeminiModels.isNotEmpty() && now - modelCacheTimeMs < 6 * 60 * 60 * 1000L) {
+            return cachedGeminiModels
+        }
+        val preferred = listOf(
+            "gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-3.7-flash",
+            "gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.1-flash-lite",
+            "gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash",
+            "gemini-2.0-flash-lite"
+        )
+        val discovered = runCatching {
+            val connection = (URL("https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000")
+                .openConnection() as HttpURLConnection).apply {
+                connectTimeout = 4500
+                readTimeout = 4500
+                setRequestProperty("x-goog-api-key", apiKey.trim())
+            }
             try {
-                requestGemini(apiKey, prompt, primary)
-            } catch (second: Throwable) {
-                if (!isTemporaryAiFailure(second)) throw second
-                // Switch model only for capacity/rate-limit/transport failures.
-                Thread.sleep(500)
-                try {
-                    requestGemini(apiKey, prompt, fallback)
-                } catch (last: Throwable) {
-                    throw IllegalStateException(
-                        "Google AI is temporarily overloaded or unreachable. XYAA tried a retry and a backup model. Please try again shortly.",
-                        last
-                    )
+                val status = connection.responseCode
+                if (status !in 200..299) error("Model discovery HTTP " + status)
+                val json = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
+                val models = json.optJSONArray("models") ?: JSONArray()
+                (0 until models.length()).mapNotNull { i ->
+                    val item = models.optJSONObject(i) ?: return@mapNotNull null
+                    val name = item.optString("name").removePrefix("models/")
+                    val methods = item.optJSONArray("supportedGenerationMethods") ?: JSONArray()
+                    val supportsText = (0 until methods.length()).any { methods.optString(it) == "generateContent" }
+                    val lower = name.lowercase(Locale.ROOT)
+                    if (supportsText && lower.startsWith("gemini-") &&
+                        listOf("image", "audio", "tts", "transcrib", "embedding", "live", "robotics", "deep-research")
+                            .none { lower.contains(it) }) name else null
+                }.distinct()
+            } finally {
+                connection.disconnect()
+            }
+        }.getOrDefault(emptyList())
+        val eligible = if (discovered.isNotEmpty()) discovered.toSet() else preferred.toSet()
+        val ordered = preferred.filter { it in eligible } +
+            discovered.filter { it !in preferred && it in eligible }.sorted()
+        val result = ordered.distinct().take(8).ifEmpty { preferred.take(5) }
+        cachedGeminiModels = result
+        modelCacheTimeMs = now
+        return result
+    }
+
+    private fun askGemini(apiKey: String, prompt: String, onStatus: (String) -> Unit): String {
+        val models = discoverGeminiModels(apiKey)
+        var lastError: Throwable? = null
+        models.forEachIndexed { index, model ->
+            onStatus("Trying Gemini " + (index + 1) + "/" + models.size + ": " + model + "…")
+            try {
+                return requestGemini(apiKey, prompt, model)
+            } catch (error: Throwable) {
+                lastError = error
+                if (!isTemporaryAiFailure(error) && !isUnavailableModel(error)) throw error
+                if (index < models.lastIndex) {
+                    onStatus(model + " is slow or unavailable. Switching to " + models[index + 1] + "…")
                 }
             }
         }
+        throw IllegalStateException(
+            "Every available Gemini text model was busy or unavailable. XYAA tried " + models.size + " models. Please retry in a moment.",
+            lastError
+        )
+    }
+
+    private fun isUnavailableModel(error: Throwable): Boolean {
+        val detail = error.message.orEmpty().lowercase(Locale.ROOT)
+        return detail.contains("http 404") ||
+            (detail.contains("http 400") &&
+                (detail.contains("model") || detail.contains("not supported") || detail.contains("not found")))
     }
 
     private fun isTemporaryAiFailure(error: Throwable): Boolean {
         if (error is java.net.SocketTimeoutException ||
             error is java.net.ConnectException ||
             error is java.net.UnknownHostException) return true
-        return Regex("HTTP (429|500|502|503|504)\\b").containsMatchIn(error.message.orEmpty())
+        return Regex("HTTP (408|429|500|502|503|504)\\b").containsMatchIn(error.message.orEmpty())
     }
 
     private fun requestGemini(apiKey: String, prompt: String, model: String): String {
         val endpoint = URL("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent")
         val connection = (endpoint.openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
-            connectTimeout = 12000
-            readTimeout = 30000
+            connectTimeout = 7000
+            readTimeout = 9000
             doOutput = true
             setRequestProperty("Content-Type", "application/json")
             setRequestProperty("x-goog-api-key", apiKey.trim())
@@ -258,7 +310,7 @@ private data class ChatMessage(val text: String, val fromUser: Boolean)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun XyaaApp(
-    onSend: (String, (String) -> Unit) -> Unit,
+    onSend: (String, (String, Boolean) -> Unit) -> Unit,
     onVoice: () -> Unit,
     onSaveKey: (String) -> Unit,
     onLoadKey: () -> String?,
@@ -331,9 +383,9 @@ private fun XyaaApp(
                                     input = ""
                                     busy = true
                                     messages = messages + ChatMessage("Thinking…", false)
-                                    onSend(prompt) { result ->
+                                    onSend(prompt) { result, finished ->
                                         messages = messages.dropLast(1) + ChatMessage(result, false)
-                                        busy = false
+                                        if (finished) busy = false
                                     }
                                 }
                             },
