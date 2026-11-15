@@ -60,7 +60,6 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
 
     private fun say(text: String) {
         val spoken = text.replace(Regex("(?i)\\bXYAA\\b"), "Zyaa")
-            .replace(Regex("https?://\\S+".toRegex()), "link")
         tts?.speak(spoken, TextToSpeech.QUEUE_FLUSH, null, "xyaa-response")
     }
 
