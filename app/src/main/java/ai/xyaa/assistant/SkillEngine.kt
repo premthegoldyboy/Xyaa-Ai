@@ -74,7 +74,7 @@ class SkillEngine(private val context: Context) {
             return launch(Intent(AlarmClock.ACTION_SET_ALARM).putExtra(AlarmClock.EXTRA_HOUR, hour).putExtra(AlarmClock.EXTRA_MINUTES, minute), "Opening the alarm screen.")
         }
 
-        val open = Regex("^(?:please )?(?:open|launch|start) (.+?)[.!?]?$", RegexOption.IGNORE_CASE).find(text)
+        val open = Regex("^(?:please )?(?:open (?!website )|launch |start )(.+?)[.!?]?$", RegexOption.IGNORE_CASE).find(text)
         if (open != null) return openApp(open.groupValues[1].trim().removeSurrounding("\"").removeSurrounding("'"))
 
         val search = Regex("^(?:search(?: for)?|google) (.+)$", RegexOption.IGNORE_CASE).find(text)
@@ -135,41 +135,49 @@ class SkillEngine(private val context: Context) {
 }
 
 private object Arithmetic {
-    fun evaluate(source: String): Double {
-        val s = source.replace(" ", "")
-        var i = 0
-        fun expression(): Double {
+    fun evaluate(source: String): Double = Parser(source.replace(" ", "")).parse()
+
+    private class Parser(private val source: String) {
+        private var index = 0
+        fun parse(): Double {
+            val value = expression()
+            require(index == source.length)
+            return value
+        }
+        private fun expression(): Double {
             var value = term()
-            while (i < s.length && (s[i] == '+' || s[i] == '-')) {
-                val op = s[i++]; val rhs = term()
-                value = if (op == '+') value + rhs else value - rhs
+            while (index < source.length && (source[index] == '+' || source[index] == '-')) {
+                val operator = source[index++]
+                val right = term()
+                value = if (operator == '+') value + right else value - right
             }
             return value
         }
-        fun term(): Double {
+        private fun term(): Double {
             var value = factor()
-            while (i < s.length && (s[i] == '*' || s[i] == '/' || s[i] == '%')) {
-                val op = s[i++]; val rhs = factor()
-                value = when (op) { '*' -> value * rhs; '/' -> value / rhs; else -> value % rhs }
+            while (index < source.length && (source[index] == '*' || source[index] == '/' || source[index] == '%')) {
+                val operator = source[index++]
+                val right = factor()
+                value = when (operator) { '*' -> value * right; '/' -> value / right; else -> value % right }
             }
             return value
         }
-        lateinit var factor: () -> Double
-        factor = {
-            if (i < s.length && (s[i] == '+' || s[i] == '-')) {
-                val sign = s[i++]; (if (sign == '-') -1 else 1) * factor()
-            } else if (i < s.length && s[i] == '(') {
-                i++; val value = expression()
-                require(i < s.length && s[i] == ')'); i++; value
-            } else {
-                val start = i
-                while (i < s.length && (s[i].isDigit() || s[i] == '.')) i++
-                require(i > start)
-                s.substring(start, i).toDouble()
+        private fun factor(): Double {
+            if (index < source.length && (source[index] == '+' || source[index] == '-')) {
+                val sign = source[index++]
+                return (if (sign == '-') -1 else 1) * factor()
             }
+            if (index < source.length && source[index] == '(') {
+                index++
+                val value = expression()
+                require(index < source.length && source[index] == ')')
+                index++
+                return value
+            }
+            val begin = index
+            while (index < source.length && (source[index].isDigit() || source[index] == '.')) index++
+            require(index > begin)
+            return source.substring(begin, index).toDouble()
         }
-        val result = expression()
-        require(i == s.length)
-        return result
     }
 }
