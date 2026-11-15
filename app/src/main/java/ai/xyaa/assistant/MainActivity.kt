@@ -105,17 +105,59 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         }
         answer("Connecting to Gemini…", false)
         Thread {
+            val speechBuffer = StringBuilder()
+            var lastStreamLength = 0
+            var hasSpokenStream = false
+            var firstSpeechChunk = true
+
+            fun speakStreamChunk(chunk: String) {
+                val clean = chunk.trim()
+                if (clean.isBlank()) return
+                hasSpokenStream = true
+                val queueMode = if (firstSpeechChunk) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
+                firstSpeechChunk = false
+                val spoken = clean
+                    .replace(Regex("(?i)\\\\bX\\\\s*Y\\\\s*A\\\\s*A\\\\b"), "Zyaa")
+                    .replace(Regex("(?i)\\\\bXYAA\\\\b"), "Zyaa")
+                runOnUiThread {
+                    tts?.speak(spoken, queueMode, null, "xyaa-stream-" + System.nanoTime())
+                }
+            }
+
             val response = runCatching {
                 askGemini(
                     key,
                     prompt,
                     onStatus = { status -> runOnUiThread { answer(status, false) } },
-                    onText = { partial -> runOnUiThread { answer(partial, false) } }
+                    onText = { partial ->
+                        if (partial.isEmpty()) {
+                            speechBuffer.clear()
+                            lastStreamLength = 0
+                        } else if (partial.length >= lastStreamLength) {
+                            val delta = partial.substring(lastStreamLength)
+                            lastStreamLength = partial.length
+                            speechBuffer.append(delta)
+                            // Speak complete sentences as soon as they arrive; do not wait for
+                            // Gemini's final event or for offline neural synthesis of the full reply.
+                            while (true) {
+                                val current = speechBuffer.toString()
+                                val boundary = Regex("[.!?][\\\\s\\\\n]+").find(current) ?: break
+                                val end = boundary.range.first + 1
+                                speakStreamChunk(current.substring(0, end))
+                                speechBuffer.delete(0, boundary.range.last + 1)
+                            }
+                        }
+                        runOnUiThread { answer(partial, false) }
+                    }
                 )
             }.getOrElse { formatAiError(it) }
+
+            if (speechBuffer.isNotBlank()) speakStreamChunk(speechBuffer.toString())
             runOnUiThread {
                 answer(response, true)
-                say(response)
+                // If streaming produced no speakable text (for example, an API error), use
+                // the normal voice path. Otherwise the streamed sentences are already queued.
+                if (!hasSpokenStream) say(response)
             }
         }.start()
     }
