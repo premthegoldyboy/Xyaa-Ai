@@ -80,7 +80,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         answer("Thinking…")
         Thread {
             val response = runCatching { askGemini(key, prompt) }
-                .getOrElse { "I couldn't reach the AI service. Check your connection and API key, then try again." }
+                .getOrElse { formatAiError(it) }
             runOnUiThread {
                 answer(response)
                 say(response)
@@ -88,27 +88,66 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         }.start()
     }
 
+
+    private fun formatAiError(error: Throwable): String {
+        val detail = error.message.orEmpty()
+        return when {
+            error is java.net.UnknownHostException || error is java.net.ConnectException ->
+                "I can't connect to Google's AI service. Check that mobile data or Wi-Fi is working, then try again."
+            error is java.net.SocketTimeoutException ->
+                "Google's AI service is taking too long to respond. Please try again in a moment."
+            detail.contains("HTTP 400") ->
+                "Google rejected this request (400). Check that your Gemini API key is valid and that the selected model is available."
+            detail.contains("HTTP 401") || detail.contains("HTTP 403") ->
+                "Google rejected the API key (401/403). Recheck the key in XYAA Settings and confirm Gemini API access is enabled for its Google AI Studio project."
+            detail.contains("HTTP 404") ->
+                "The selected Gemini model wasn't found (404). XYAA needs an app update to use an available model."
+            detail.startsWith("AI service error:") ->
+                detail.removePrefix("AI service error:").trim().take(240)
+            else ->
+                "XYAA couldn't complete the AI request. ${detail.take(180).ifBlank { "Check your connection and API key, then try again." }}"
+        }
+    }
+
     private fun askGemini(apiKey: String, prompt: String): String {
-        val endpoint = URL("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + URLEncoder.encode(apiKey, "UTF-8"))
+        val endpoint = URL("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent")
         val connection = (endpoint.openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
-            connectTimeout = 15000
-            readTimeout = 30000
+            connectTimeout = 20000
+            readTimeout = 45000
             doOutput = true
             setRequestProperty("Content-Type", "application/json")
+            setRequestProperty("x-goog-api-key", apiKey.trim())
         }
         try {
-            val body = JSONObject().put("system_instruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text",
-                "You are XYAA, a helpful, warm, concise Android assistant. Your name is pronounced Zyaa, never spell it letter by letter. Be honest about actions you cannot perform. Never claim an action succeeded unless the app confirms it."))))
+            val body = JSONObject()
+                .put("system_instruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text",
+                    "You are XYAA, a helpful, warm, concise Android assistant. Your name is pronounced Zyaa, never spell it letter by letter. Be honest about actions you cannot perform. Never claim an action succeeded unless the app confirms it."))))
                 .put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", prompt)))))
                 .put("generationConfig", JSONObject().put("temperature", 0.7).put("maxOutputTokens", 700))
             connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
-            val stream = if (connection.responseCode in 200..299) connection.inputStream else connection.errorStream
-            val payload = stream.bufferedReader().use { it.readText() }
-            if (connection.responseCode !in 200..299) throw IllegalStateException("AI request failed: HTTP ${connection.responseCode}")
+            val status = connection.responseCode
+            val stream = if (status in 200..299) connection.inputStream else connection.errorStream
+            val payload = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            if (status !in 200..299) {
+                val apiMessage = runCatching {
+                    JSONObject(payload).getJSONObject("error").optString("message")
+                }.getOrDefault("")
+                throw IllegalStateException("AI service error: HTTP $status. " + apiMessage.ifBlank { "Google did not provide an explanation." })
+            }
             val json = JSONObject(payload)
-            return json.getJSONArray("candidates").getJSONObject(0)
-                .getJSONObject("content").getJSONArray("parts").getJSONObject(0).getString("text").trim()
+            val candidates = json.optJSONArray("candidates")
+                ?: throw IllegalStateException("AI service error: Google returned no response candidates.")
+            if (candidates.length() == 0) {
+                throw IllegalStateException("AI service error: Google returned an empty response. The request may have been blocked by a safety filter.")
+            }
+            val parts = candidates.getJSONObject(0).getJSONObject("content").optJSONArray("parts")
+                ?: throw IllegalStateException("AI service error: Google returned no text.")
+            val responseText = (0 until parts.length()).mapNotNull { index ->
+                parts.optJSONObject(index)?.optString("text")?.takeIf { it.isNotBlank() }
+            }.joinToString("\n").trim()
+            if (responseText.isBlank()) throw IllegalStateException("AI service error: Google returned an empty text response.")
+            return responseText
         } finally {
             connection.disconnect()
         }
