@@ -292,7 +292,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == 42 && resultCode == Activity.RESULT_OK) {
             data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let { spoken ->
-                process(spoken) { /* Voice result is spoken by process(). */ }
+                process(spoken) { _, _ -> /* Voice result is spoken by process(). */ }
             }
         }
     }
