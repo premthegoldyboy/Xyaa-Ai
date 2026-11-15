@@ -24,11 +24,12 @@ class NeuralVoiceEngine(private val context: Context, private val onStatus: (Str
     companion object {
         private const val MODEL_URL = "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-multi-lang-v1_0.tar.bz2"
         private const val MODEL_DIR = "kokoro-multi-lang-v1_0"
-        private const val VOICE_ID = 2 // Kokoro af_bella
+        private const val VOICE_ID = 9 // Kokoro af_sky: brighter, lighter voice
     }
     private val modelRoot = File(context.filesDir, "neural-voice")
     private val modelDir = File(modelRoot, MODEL_DIR)
-    private val executor = Executors.newSingleThreadExecutor()
+    private val executor = Executors.newSingleThreadExecutor() // Serialize model inference
+    private val playbackExecutor = Executors.newSingleThreadExecutor() // Play while the next chunk is synthesized
     private val downloading = AtomicBoolean(false)
     @Volatile private var engine: OfflineTts? = null
     @Volatile private var closed = false
@@ -36,7 +37,7 @@ class NeuralVoiceEngine(private val context: Context, private val onStatus: (Str
     fun initializeIfInstalled() {
         executor.execute {
             if (!closed && hasModelFiles()) runCatching { createEngine() }
-                .onSuccess { engine = it; onStatus("Ready · Kokoro neural voice (af_bella), offline") }
+                .onSuccess { engine = it; onStatus("Ready · Kokoro neural voice (af_sky), offline") }
                 .onFailure { onStatus("Voice model found but could not load: ${it.message ?: "unknown error"}") }
         }
     }
@@ -84,7 +85,7 @@ class NeuralVoiceEngine(private val context: Context, private val onStatus: (Str
                 archive.delete()
                 check(hasModelFiles()) { "Downloaded archive is missing required Kokoro files" }
                 engine = createEngine()
-                onStatus("Ready · Kokoro neural voice (af_bella), offline")
+                onStatus("Ready · Kokoro neural voice (af_sky), offline")
             } catch (error: Throwable) {
                 onStatus("Neural voice setup failed: ${error.message ?: "unknown error"}. Existing system voice remains available.")
             } finally { downloading.set(false) }
@@ -98,8 +99,8 @@ class NeuralVoiceEngine(private val context: Context, private val onStatus: (Str
             runCatching {
                 val spoken = text.replace(Regex("(?i)\\bX\\s*Y\\s*A\\s*A\\b"), "Zyaa")
                     .replace(Regex("(?i)\\bXYAA\\b"), "Zyaa")
-                val audio = active.generate(spoken, sid = VOICE_ID, speed = 1.0f)
-                play(audio.samples, audio.sampleRate)
+                val audio = active.generate(spoken, sid = VOICE_ID, speed = 1.08f)
+                playbackExecutor.execute { play(audio.samples, audio.sampleRate) }
             }.onFailure {
                 onStatus("Neural voice playback failed; switching to device voice for this reply.")
                 if (!closed) fallback()
@@ -187,7 +188,7 @@ class NeuralVoiceEngine(private val context: Context, private val onStatus: (Str
     }
 
     fun close() {
-        closed = true; executor.shutdownNow()
+        closed = true; executor.shutdownNow(); playbackExecutor.shutdownNow()
         runCatching { engine?.release() }; engine = null
     }
 }
