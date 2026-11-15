@@ -117,10 +117,18 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 val queueMode = if (firstSpeechChunk) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
                 firstSpeechChunk = false
                 val spoken = clean
-                    .replace(Regex("(?i)\\\\bX\\\\s*Y\\\\s*A\\\\s*A\\\\b"), "Zyaa")
-                    .replace(Regex("(?i)\\\\bXYAA\\\\b"), "Zyaa")
-                runOnUiThread {
-                    tts?.speak(spoken, queueMode, null, "xyaa-stream-" + System.nanoTime())
+                    .replace(Regex("(?i)\\bX\\s*Y\\s*A\\s*A\\b"), "Zyaa")
+                    .replace(Regex("(?i)\\bXYAA\\b"), "Zyaa")
+                // Prefer Kokoro for streamed Gemini sentences; retain Android TTS as fallback.
+                val neuralQueued = neuralVoice.speak(spoken) {
+                    runOnUiThread {
+                        tts?.speak(spoken, queueMode, null, "xyaa-stream-fallback-" + System.nanoTime())
+                    }
+                }
+                if (!neuralQueued) {
+                    runOnUiThread {
+                        tts?.speak(spoken, queueMode, null, "xyaa-stream-" + System.nanoTime())
+                    }
                 }
             }
 
@@ -141,7 +149,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                             // Gemini's final event or for offline neural synthesis of the full reply.
                             while (true) {
                                 val current = speechBuffer.toString()
-                                val boundary = Regex("[.!?][\\\\s\\\\n]+").find(current) ?: break
+                                val boundary = Regex("[.!?][\\s\\n]+").find(current) ?: break
                                 val end = boundary.range.first + 1
                                 speakStreamChunk(current.substring(0, end))
                                 speechBuffer.delete(0, boundary.range.last + 1)
@@ -305,7 +313,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         try {
             val body = JSONObject()
                 .put("system_instruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text",
-                    "You are XYAA, a helpful Android assistant. Be concise and direct. Pronounce XYAA as Zyaa. Be honest about actions."))))
+                    "You are XYAA, a helpful Android assistant with spoken audio output provided by the Android app. Be concise and direct. Pronounce XYAA as Zyaa. Never claim you are text-only or that the app has no voice output. Be honest about actions."))))
                 .put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", prompt)))))
                 .put("generationConfig", JSONObject().put("temperature", 0.5).put("maxOutputTokens", 280))
             connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
