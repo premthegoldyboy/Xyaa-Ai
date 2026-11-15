@@ -81,7 +81,10 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         val spoken = text
             .replace(Regex("(?i)\\bX\\s*Y\\s*A\\s*A\\b"), "Zyaa")
             .replace(Regex("(?i)\\bXYAA\\b"), "Zyaa")
-        if (!neuralVoice.speak(spoken) {
+        val neuralQueued = neuralVoice.speak(spoken) {
+            runOnUiThread { tts?.speak(spoken, TextToSpeech.QUEUE_FLUSH, null, "xyaa-response") }
+        }
+        if (!neuralQueued) {
             tts?.speak(spoken, TextToSpeech.QUEUE_FLUSH, null, "xyaa-response")
         }
     }
