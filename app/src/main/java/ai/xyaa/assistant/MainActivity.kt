@@ -91,7 +91,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         val match = Regex("^(?:please\\s+)?(?:open|launch|start)\\s+(.+?)[.!?]?$", RegexOption.IGNORE_CASE)
             .find(command)
         if (match != null) {
-            val requested = match.groupValues[1].trim().trim('"', '\\'')
+            val requested = match.groupValues[1].trim().removeSurrounding("\"").removeSurrounding("'")
             val result = openInstalledApp(requested)
             say(result)
             return result
