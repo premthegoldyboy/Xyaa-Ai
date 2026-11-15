@@ -36,17 +36,23 @@ import java.util.Locale
 class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     private var tts: TextToSpeech? = null
     private lateinit var skills: SkillEngine
+    private lateinit var neuralVoice: NeuralVoiceEngine
+    private val neuralVoiceStatus = mutableStateOf("Neural voice not downloaded (about 400 MB)")
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         skills = SkillEngine(this)
+        neuralVoice = NeuralVoiceEngine(this) { status -> runOnUiThread { neuralVoiceStatus.value = status } }
+        neuralVoice.initializeIfInstalled()
         tts = TextToSpeech(this, this)
         setContent {
             XyaaApp(
                 onSend = { prompt, answer -> process(prompt, answer) },
                 onVoice = ::startVoiceInput,
                 onSaveKey = { key -> SecureKeyStore(this).save(key) },
-                onLoadKey = { SecureKeyStore(this).read() }
+                onLoadKey = { SecureKeyStore(this).read() },
+                neuralVoiceStatus = neuralVoiceStatus.value,
+                onDownloadNeuralVoice = { neuralVoice.downloadAndInitialize() }
             )
         }
     }
@@ -214,6 +220,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     }
 
     override fun onDestroy() {
+        neuralVoice.close()
         tts?.stop()
         tts?.shutdown()
         super.onDestroy()
@@ -228,7 +235,9 @@ private fun XyaaApp(
     onSend: (String, (String) -> Unit) -> Unit,
     onVoice: () -> Unit,
     onSaveKey: (String) -> Unit,
-    onLoadKey: () -> String?
+    onLoadKey: () -> String?,
+    neuralVoiceStatus: String,
+    onDownloadNeuralVoice: () -> Unit
 ) {
     var input by remember { mutableStateOf("") }
     var messages by remember { mutableStateOf(listOf(ChatMessage("Hey! I'm Zyaa. I can launch apps, search, set timers, calculate, save notes and much more. Ask me anything.", false))) }
@@ -366,6 +375,11 @@ private fun XyaaApp(
                             label = { Text("Gemini API key") }, singleLine = true
                         )
                         Text("The key is encrypted with Android Keystore on this device.", style = MaterialTheme.typography.bodySmall)
+                        HorizontalDivider()
+                        Text("XYAA Neural Voice", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                        Text(neuralVoiceStatus, style = MaterialTheme.typography.bodySmall)
+                        Button(onClick = onDownloadNeuralVoice, modifier = Modifier.fillMaxWidth()) { Text("Download neural voice (~400 MB)") }
+                        Text("Kokoro runs on this phone after download. Speech generation is then offline.", style = MaterialTheme.typography.bodySmall)
                     }
                 },
                 confirmButton = {
