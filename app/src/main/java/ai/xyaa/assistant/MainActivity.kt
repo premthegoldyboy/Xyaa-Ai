@@ -23,20 +23,12 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         super.onCreate(savedInstanceState)
         tts = TextToSpeech(this, this)
         setContent {
-            XyaaScreen(
-                onCommand = ::handleCommand,
-                onVoice = ::startVoiceInput,
-                onVoiceSettings = ::openVoiceSettings
-            )
+            XyaaScreen(::handleCommand, ::startVoiceInput, ::openVoiceSettings)
         }
     }
 
     override fun onInit(status: Int) {
-        if (status == TextToSpeech.SUCCESS) {
-            // Keep the system-selected voice/engine. This lets users choose a neural
-            // engine such as HayaiTTS in Android settings without hard-coding a voice.
-            tts?.language = Locale.getDefault()
-        }
+        if (status == TextToSpeech.SUCCESS) tts?.language = Locale.getDefault()
     }
 
     private fun say(text: String) {
@@ -46,11 +38,10 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
 
     private fun openVoiceSettings() {
         val intent = Intent("com.android.settings.TTS_SETTINGS")
-        if (intent.resolveActivity(packageManager) == null) {
-            intent.action = Settings.ACTION_SETTINGS
+        if (intent.resolveActivity(packageManager) == null) intent.action = Settings.ACTION_SETTINGS
+        runCatching { startActivity(intent) }.onFailure {
+            say("I couldn't open voice settings on this device.")
         }
-        runCatching { startActivity(intent) }
-            .onFailure { say("I couldn't open voice settings on this device.") }
     }
 
     private fun startVoiceInput() {
@@ -70,11 +61,8 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == 43 && grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
-            startVoiceInput()
-        } else if (requestCode == 43) {
-            say("Microphone permission is needed for voice input.")
-        }
+        if (requestCode == 43 && grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) startVoiceInput()
+        else if (requestCode == 43) say("Microphone permission is needed for voice input.")
     }
 
     @Deprecated("Deprecated by Android; retained for compatibility with this starter.")
@@ -87,45 +75,30 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     }
 
     private fun handleCommand(raw: String): String {
-        val command = raw.trim()
         val match = Regex("^(?:please\\s+)?(?:open|launch|start)\\s+(.+?)[.!?]?$", RegexOption.IGNORE_CASE)
-            .find(command)
+            .find(raw.trim())
         if (match != null) {
             val requested = match.groupValues[1].trim().removeSurrounding("\"").removeSurrounding("'")
-            val result = openInstalledApp(requested)
-            say(result)
-            return result
+            return openInstalledApp(requested).also(::say)
         }
-        val response = "I can open installed apps. Try saying, open YouTube."
-        say(response)
-        return response
+        return "I can open installed apps. Try saying, open YouTube.".also(::say)
     }
 
     private fun openInstalledApp(requested: String): String {
         val launcher = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-        val apps = packageManager.queryIntentActivities(launcher, PackageManager.MATCH_DEFAULT_ONLY)
-        val candidates = apps.map { info ->
-            info.loadLabel(packageManager).toString() to info.activityInfo.packageName
-        }
+        val candidates = packageManager.queryIntentActivities(launcher, PackageManager.MATCH_DEFAULT_ONLY)
+            .map { it.loadLabel(packageManager).toString() to it.activityInfo.packageName }
         val exact = candidates.filter { it.first.equals(requested, ignoreCase = true) }
-        val matches = if (exact.isNotEmpty()) exact else candidates.filter {
-            it.first.contains(requested, ignoreCase = true)
-        }
+        val matches = if (exact.isNotEmpty()) exact else candidates.filter { it.first.contains(requested, ignoreCase = true) }
         val unique = matches.distinctBy { it.second }
         if (unique.size == 1) {
-            val (label, packageName) = unique.first()
-            val launch = packageManager.getLaunchIntentForPackage(packageName)
+            val (label, pkg) = unique.first()
+            val launch = packageManager.getLaunchIntentForPackage(pkg)
                 ?: return "I found $label, but Android did not provide a launch action."
-            return try {
-                startActivity(launch)
-                "Opening $label."
-            } catch (_: Exception) {
-                "Android could not open $label."
-            }
+            return try { startActivity(launch); "Opening $label." }
+            catch (_: Exception) { "Android could not open $label." }
         }
-        if (unique.size > 1) {
-            return "I found more than one match: ${unique.take(4).joinToString(", ") { it.first }}. Which one do you mean?"
-        }
+        if (unique.size > 1) return "I found multiple matches: ${unique.take(4).joinToString(", ") { it.first }}. Which one?"
         return "I couldn't find an installed app named $requested."
     }
 
@@ -137,43 +110,24 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
 }
 
 @Composable
-private fun XyaaScreen(
-    onCommand: (String) -> String,
-    onVoice: () -> Unit,
-    onVoiceSettings: () -> Unit
-) {
+private fun XyaaScreen(onCommand: (String) -> String, onVoice: () -> Unit, onVoiceSettings: () -> Unit) {
     var input by remember { mutableStateOf("") }
-    var reply by remember { mutableStateOf("Hi, I'm Zyaa. Say or type “open YouTube” to launch an installed app.") }
+    var reply by remember { mutableStateOf("Hi, I'm Zyaa. Say “open YouTube” to launch an installed app.") }
     MaterialTheme {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Text("XYAA", style = MaterialTheme.typography.headlineLarge)
                 Text("Your Android assistant", style = MaterialTheme.typography.titleMedium)
-                Card(Modifier.fillMaxWidth()) {
-                    Text(reply, Modifier.padding(16.dp), style = MaterialTheme.typography.bodyLarge)
-                }
+                Card(Modifier.fillMaxWidth()) { Text(reply, Modifier.padding(16.dp), style = MaterialTheme.typography.bodyLarge) }
                 OutlinedButton(onClick = onVoiceSettings, modifier = Modifier.fillMaxWidth()) {
                     Text("Choose XYAA's voice")
                 }
-                Text(
-                    "For a natural neural voice, install a compatible Android TTS engine such as HayaiTTS, then select it and a voice in these system settings.",
-                    style = MaterialTheme.typography.bodySmall
-                )
+                Text("Install a compatible neural TTS engine such as HayaiTTS, then select its voice in Android settings.", style = MaterialTheme.typography.bodySmall)
                 Spacer(Modifier.weight(1f))
-                OutlinedTextField(
-                    value = input,
-                    onValueChange = { input = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Tell XYAA what to do") },
-                    singleLine = true
-                )
+                OutlinedTextField(input, { input = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Tell XYAA what to do") }, singleLine = true)
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Button(onClick = { if (input.isNotBlank()) reply = onCommand(input) }, modifier = Modifier.weight(1f)) {
-                        Text("Send")
-                    }
-                    OutlinedButton(onClick = onVoice, modifier = Modifier.weight(1f)) {
-                        Text("Speak")
-                    }
+                    Button(onClick = { if (input.isNotBlank()) reply = onCommand(input) }, modifier = Modifier.weight(1f)) { Text("Send") }
+                    OutlinedButton(onClick = onVoice, modifier = Modifier.weight(1f)) { Text("Speak") }
                 }
             }
         }
