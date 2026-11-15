@@ -24,7 +24,7 @@ class NeuralVoiceEngine(private val context: Context, private val onStatus: (Str
     companion object {
         private const val MODEL_URL = "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-multi-lang-v1_0.tar.bz2"
         private const val MODEL_DIR = "kokoro-multi-lang-v1_0"
-        private const val VOICE_ID = 1 // Kokoro af_bella
+        private const val VOICE_ID = 2 // Kokoro af_bella
     }
     private val modelRoot = File(context.filesDir, "neural-voice")
     private val modelDir = File(modelRoot, MODEL_DIR)
@@ -69,7 +69,7 @@ class NeuralVoiceEngine(private val context: Context, private val onStatus: (Str
         }
     }
 
-    fun speak(text: String): Boolean {
+    fun speak(text: String, fallback: () -> Unit = {}): Boolean {
         val active = engine ?: return false
         if (closed || text.isBlank()) return false
         executor.execute {
@@ -78,7 +78,10 @@ class NeuralVoiceEngine(private val context: Context, private val onStatus: (Str
                     .replace(Regex("(?i)\\bXYAA\\b"), "Zyaa")
                 val audio = active.generate(spoken, sid = VOICE_ID, speed = 1.0f)
                 play(audio.samples, audio.sampleRate)
-            }.onFailure { onStatus("Neural voice playback failed; using device voice next time.") }
+            }.onFailure {
+                onStatus("Neural voice playback failed; switching to device voice for this reply.")
+                if (!closed) fallback()
+            }
         }
         return true
     }

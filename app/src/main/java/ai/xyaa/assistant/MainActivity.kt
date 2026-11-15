@@ -81,7 +81,9 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         val spoken = text
             .replace(Regex("(?i)\\bX\\s*Y\\s*A\\s*A\\b"), "Zyaa")
             .replace(Regex("(?i)\\bXYAA\\b"), "Zyaa")
-        tts?.speak(spoken, TextToSpeech.QUEUE_FLUSH, null, "xyaa-response")
+        if (!neuralVoice.speak(spoken) {
+            tts?.speak(spoken, TextToSpeech.QUEUE_FLUSH, null, "xyaa-response")
+        }
     }
 
     private fun process(prompt: String, answer: (String) -> Unit) {
@@ -116,7 +118,11 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             error is java.net.UnknownHostException || error is java.net.ConnectException ->
                 "I can't connect to Google's AI service. Check that mobile data or Wi-Fi is working, then try again."
             error is java.net.SocketTimeoutException ->
-                "Google's AI service is taking too long to respond. Please try again in a moment."
+                "Google's AI service did not respond in time. XYAA has a shorter timeout now; please retry."
+            detail.contains("HTTP 429") ->
+                "Google AI rate limit reached. XYAA will retry briefly; wait a little before sending another request."
+            detail.contains("HTTP 503") || detail.contains("HTTP 500") || detail.contains("HTTP 502") || detail.contains("HTTP 504") ->
+                "Google AI is temporarily overloaded. XYAA tried its recovery path; please try again shortly."
             detail.contains("HTTP 400") ->
                 "Google rejected this request (400). Check that your Gemini API key is valid and that the selected model is available."
             detail.contains("HTTP 401") || detail.contains("HTTP 403") ->
@@ -131,28 +137,45 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     }
 
     private fun askGemini(apiKey: String, prompt: String): String {
-        return runCatching { requestGemini(apiKey, prompt, "gemini-3.8-flash") }
-            .getOrElse { primaryError ->
-                val message = primaryError.message.orEmpty()
-                // 503/429/5xx are capacity or transient-service errors, not bad user input.
-                if (!Regex("HTTP (429|500|502|503|504)\\b").containsMatchIn(message)) throw primaryError
-                Thread.sleep(900)
-                runCatching { requestGemini(apiKey, prompt, "gemini-3.5-flash-lite") }
-                    .getOrElse { fallbackError ->
-                        throw IllegalStateException(
-                            "AI service is temporarily busy on both available models. Please retry shortly. " +
-                                (fallbackError.message ?: message)
-                        )
-                    }
+        val primary = "gemini-3.8-flash"
+        val fallback = "gemini-3.5-flash-lite"
+        return try {
+            requestGemini(apiKey, prompt, primary)
+        } catch (first: Throwable) {
+            if (!isTemporaryAiFailure(first)) throw first
+            // One short exponential-backoff retry avoids repeatedly hammering an overloaded endpoint.
+            Thread.sleep(700)
+            try {
+                requestGemini(apiKey, prompt, primary)
+            } catch (second: Throwable) {
+                if (!isTemporaryAiFailure(second)) throw second
+                // Switch model only for capacity/rate-limit/transport failures.
+                Thread.sleep(500)
+                try {
+                    requestGemini(apiKey, prompt, fallback)
+                } catch (last: Throwable) {
+                    throw IllegalStateException(
+                        "Google AI is temporarily overloaded or unreachable. XYAA tried a retry and a backup model. Please try again shortly.",
+                        last
+                    )
+                }
             }
+        }
+    }
+
+    private fun isTemporaryAiFailure(error: Throwable): Boolean {
+        if (error is java.net.SocketTimeoutException ||
+            error is java.net.ConnectException ||
+            error is java.net.UnknownHostException) return true
+        return Regex("HTTP (429|500|502|503|504)\\b").containsMatchIn(error.message.orEmpty())
     }
 
     private fun requestGemini(apiKey: String, prompt: String, model: String): String {
         val endpoint = URL("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent")
         val connection = (endpoint.openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
-            connectTimeout = 20000
-            readTimeout = 45000
+            connectTimeout = 12000
+            readTimeout = 30000
             doOutput = true
             setRequestProperty("Content-Type", "application/json")
             setRequestProperty("x-goog-api-key", apiKey.trim())
@@ -162,7 +185,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 .put("system_instruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text",
                     "You are XYAA, a helpful, warm, concise Android assistant. Your name is pronounced Zyaa, never spell it letter by letter. Be honest about actions you cannot perform. Never claim an action succeeded unless the app confirms it."))))
                 .put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", prompt)))))
-                .put("generationConfig", JSONObject().put("temperature", 0.7).put("maxOutputTokens", 700))
+                .put("generationConfig", JSONObject().put("temperature", 0.6).put("maxOutputTokens", 450))
             connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
             val status = connection.responseCode
             val stream = if (status in 200..299) connection.inputStream else connection.errorStream
