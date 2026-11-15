@@ -41,14 +41,12 @@ function loadVoices(){voices=speechSynthesis.getVoices();const s=$('voice'),v=cf
 if('speechSynthesis'in window){speechSynthesis.onvoiceschanged=loadVoices;loadVoices()}
 function speechText(text){
   return String(text)
-    .replace(/\\bXYAA\\b/gi,'Zyaa')
-    .replace(/\\bXyaa\\b/g,'Zyaa')
-    .replace(/\\*\\*(.*?)\\*\\*/g,'$1')
-    .replace(/\\*(.*?)\\*/g,'$1')
-    .replace(/^\u0060\u0060\u0060[^\\n]*\\n?|\\n?\u0060\u0060\u0060$/gm,'')
-    .replace(/\\[([^\\]]+)\\]\\((https?:\\/\\/[^)]+)\\)/g,'$1')
-    .replace(/https?:\\/\\/\\S+/g,'a link')
-    .replace(/\\s+/g,' ')
+    .replace(/\bXYAA\b/gi,'Zyaa')
+    .replace(/\*\*(.*?)\*\*/g,'$1')
+    .replace(/\*(.*?)\*/g,'$1')
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g,'$1')
+    .replace(/https?:\/\/\S+/g,'a link')
+    .replace(/\s+/g,' ')
     .trim();
 }
 function speak(text){
