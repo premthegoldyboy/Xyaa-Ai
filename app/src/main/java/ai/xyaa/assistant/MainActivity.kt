@@ -36,30 +36,51 @@ import java.util.Locale
 class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     private var tts: TextToSpeech? = null
     private lateinit var skills: SkillEngine
+    private lateinit var neuralVoice: NeuralVoiceEngine
+    private val neuralVoiceStatus = mutableStateOf("Neural voice not downloaded (about 400 MB)")
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         skills = SkillEngine(this)
+        neuralVoice = NeuralVoiceEngine(this) { status -> runOnUiThread { neuralVoiceStatus.value = status } }
+        neuralVoice.initializeIfInstalled()
         tts = TextToSpeech(this, this)
         setContent {
             XyaaApp(
                 onSend = { prompt, answer -> process(prompt, answer) },
                 onVoice = ::startVoiceInput,
                 onSaveKey = { key -> SecureKeyStore(this).save(key) },
-                onLoadKey = { SecureKeyStore(this).read() }
+                onLoadKey = { SecureKeyStore(this).read() },
+                neuralVoiceStatus = neuralVoiceStatus.value,
+                onDownloadNeuralVoice = { neuralVoice.downloadAndInitialize() }
             )
         }
     }
 
     override fun onInit(status: Int) {
-        if (status == TextToSpeech.SUCCESS) {
-            tts?.language = Locale.getDefault()
-            tts?.setSpeechRate(0.94f)
-        }
+        if (status != TextToSpeech.SUCCESS) return
+        val engine = tts ?: return
+        // Prefer a high-quality Indian-English voice when the device has one installed.
+        val voices = engine.voices.orEmpty()
+        val preferred = voices
+            .filter { it.locale.language == "en" }
+            .sortedWith(
+                compareByDescending<android.speech.tts.Voice> {
+                    it.locale.country.equals("IN", ignoreCase = true)
+                }.thenByDescending { it.quality }
+                    .thenBy { it.isNetworkConnectionRequired }
+            )
+            .firstOrNull()
+        if (preferred != null) engine.voice = preferred
+        else engine.language = Locale("en", "IN")
+        engine.setSpeechRate(0.91f)
+        engine.setPitch(1.02f)
     }
 
     private fun say(text: String) {
-        val spoken = text.replace(Regex("(?i)\\bXYAA\\b"), "Zyaa")
+        val spoken = text
+            .replace(Regex("(?i)\\bX\\s*Y\\s*A\\s*A\\b"), "Zyaa")
+            .replace(Regex("(?i)\\bXYAA\\b"), "Zyaa")
         tts?.speak(spoken, TextToSpeech.QUEUE_FLUSH, null, "xyaa-response")
     }
 
@@ -110,7 +131,24 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     }
 
     private fun askGemini(apiKey: String, prompt: String): String {
-        val endpoint = URL("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent")
+        return runCatching { requestGemini(apiKey, prompt, "gemini-3.8-flash") }
+            .getOrElse { primaryError ->
+                val message = primaryError.message.orEmpty()
+                // 503/429/5xx are capacity or transient-service errors, not bad user input.
+                if (!Regex("HTTP (429|500|502|503|504)\\b").containsMatchIn(message)) throw primaryError
+                Thread.sleep(900)
+                runCatching { requestGemini(apiKey, prompt, "gemini-3.5-flash-lite") }
+                    .getOrElse { fallbackError ->
+                        throw IllegalStateException(
+                            "AI service is temporarily busy on both available models. Please retry shortly. " +
+                                (fallbackError.message ?: message)
+                        )
+                    }
+            }
+    }
+
+    private fun requestGemini(apiKey: String, prompt: String, model: String): String {
+        val endpoint = URL("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent")
         val connection = (endpoint.openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             connectTimeout = 20000
@@ -182,6 +220,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     }
 
     override fun onDestroy() {
+        neuralVoice.close()
         tts?.stop()
         tts?.shutdown()
         super.onDestroy()
@@ -196,7 +235,9 @@ private fun XyaaApp(
     onSend: (String, (String) -> Unit) -> Unit,
     onVoice: () -> Unit,
     onSaveKey: (String) -> Unit,
-    onLoadKey: () -> String?
+    onLoadKey: () -> String?,
+    neuralVoiceStatus: String,
+    onDownloadNeuralVoice: () -> Unit
 ) {
     var input by remember { mutableStateOf("") }
     var messages by remember { mutableStateOf(listOf(ChatMessage("Hey! I'm Zyaa. I can launch apps, search, set timers, calculate, save notes and much more. Ask me anything.", false))) }
@@ -290,7 +331,7 @@ private fun XyaaApp(
                         Row(Modifier.padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                             Box(Modifier.size(7.dp).background(Color(0xFF62D6A5), CircleShape))
                             Spacer(Modifier.width(6.dp))
-                            Text("ONLINE", style = MaterialTheme.typography.labelSmall, color = Color(0xFF8CE3BB))
+                            Text("READY", style = MaterialTheme.typography.labelSmall, color = Color(0xFF8CE3BB))
                         }
                     }
                 }
@@ -334,6 +375,11 @@ private fun XyaaApp(
                             label = { Text("Gemini API key") }, singleLine = true
                         )
                         Text("The key is encrypted with Android Keystore on this device.", style = MaterialTheme.typography.bodySmall)
+                        HorizontalDivider()
+                        Text("XYAA Neural Voice", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                        Text(neuralVoiceStatus, style = MaterialTheme.typography.bodySmall)
+                        Button(onClick = onDownloadNeuralVoice, modifier = Modifier.fillMaxWidth()) { Text("Download neural voice (~400 MB)") }
+                        Text("Kokoro runs on this phone after download. Speech generation is then offline.", style = MaterialTheme.typography.bodySmall)
                     }
                 },
                 confirmButton = {
