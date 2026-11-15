@@ -135,41 +135,36 @@ class SkillEngine(private val context: Context) {
 }
 
 private object Arithmetic {
-    fun evaluate(source: String): Double {
-        val s = source.replace(" ", "")
-        var i = 0
-        fun expression(): Double {
-            var value = term()
+    fun evaluate(source: String): Double = Parser(source.replace(" ", "")).parse()
+    private class Parser(private val s: String) {
+        private var i = 0
+        fun parse(): Double { val v = expression(); require(i == s.length); return v }
+        private fun expression(): Double {
+            var v = term()
             while (i < s.length && (s[i] == '+' || s[i] == '-')) {
-                val op = s[i++]; val rhs = term()
-                value = if (op == '+') value + rhs else value - rhs
+                val op = s[i++]; val r = term(); v = if (op == '+') v + r else v - r
             }
-            return value
+            return v
         }
-        fun term(): Double {
-            var value = factor()
+        private fun term(): Double {
+            var v = factor()
             while (i < s.length && (s[i] == '*' || s[i] == '/' || s[i] == '%')) {
-                val op = s[i++]; val rhs = factor()
-                value = when (op) { '*' -> value * rhs; '/' -> value / rhs; else -> value % rhs }
+                val op = s[i++]; val r = factor()
+                v = when (op) { '*' -> v * r; '/' -> v / r; else -> v % r }
             }
-            return value
+            return v
         }
-        lateinit var factor: () -> Double
-        factor = {
+        private fun factor(): Double {
             if (i < s.length && (s[i] == '+' || s[i] == '-')) {
-                val sign = s[i++]; (if (sign == '-') -1 else 1) * factor()
-            } else if (i < s.length && s[i] == '(') {
-                i++; val value = expression()
-                require(i < s.length && s[i] == ')'); i++; value
-            } else {
-                val start = i
-                while (i < s.length && (s[i].isDigit() || s[i] == '.')) i++
-                require(i > start)
-                s.substring(start, i).toDouble()
+                val sign = s[i++]; return (if (sign == '-') -1.0 else 1.0) * factor()
             }
+            if (i < s.length && s[i] == '(') {
+                i++; val v = expression(); require(i < s.length && s[i] == ')'); i++; return v
+            }
+            val start = i
+            while (i < s.length && (s[i].isDigit() || s[i] == '.')) i++
+            require(i > start)
+            return s.substring(start, i).toDouble()
         }
-        val result = expression()
-        require(i == s.length)
-        return result
     }
 }

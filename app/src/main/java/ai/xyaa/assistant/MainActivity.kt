@@ -188,7 +188,7 @@ private fun XyaaApp(
                     },
                     navigationIcon = {
                         Surface(shape = CircleShape, color = Color(0xFF24233A), modifier = Modifier.padding(start = 12.dp)) {
-                            Icon(Icons.Default.AutoAwesome, null, tint = Color(0xFFB9A5FF), modifier = Modifier.padding(11.dp))
+                            Icon(Icons.Default.Star, null, tint = Color(0xFFB9A5FF), modifier = Modifier.padding(11.dp))
                         }
                     },
                     actions = {
@@ -215,7 +215,7 @@ private fun XyaaApp(
                             maxLines = 4
                         )
                         IconButton(onClick = onVoice, modifier = Modifier.size(48.dp).background(Color(0xFF28233F), CircleShape)) {
-                            Icon(Icons.Default.Mic, "Speak", tint = Color(0xFFCCBFFF))
+                            Icon(Icons.Default.KeyboardVoice, "Speak", tint = Color(0xFFCCBFFF))
                         }
                         IconButton(
                             onClick = {
