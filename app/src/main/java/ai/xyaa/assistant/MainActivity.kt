@@ -323,7 +323,6 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         )
         if (neuralQueued) {
             stopFallback()
-            onProgress(text)
             return
         }
         val result = engine.speak(spoken, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
