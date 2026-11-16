@@ -54,7 +54,8 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 onSaveKey = { key -> SecureKeyStore(this).save(key) },
                 onLoadKey = { SecureKeyStore(this).read() },
                 neuralVoiceStatus = neuralVoiceStatus.value,
-                onDownloadNeuralVoice = { neuralVoice.downloadAndInitialize() }
+                onDownloadNeuralVoice = { neuralVoice.downloadAndInitialize() },
+                onClearMemory = { conversationMemory.clear() }
             )
         }
     }
@@ -421,7 +422,8 @@ private fun XyaaApp(
     onSaveKey: (String) -> Unit,
     onLoadKey: () -> String?,
     neuralVoiceStatus: String,
-    onDownloadNeuralVoice: () -> Unit
+    onDownloadNeuralVoice: () -> Unit,
+    onClearMemory: () -> Unit
 ) {
     var input by remember { mutableStateOf("") }
     var messages by remember { mutableStateOf(listOf(ChatMessage("Hey! I'm Zyaa. I can launch apps, search, set timers, calculate, save notes and much more. Ask me anything.", false))) }
@@ -564,6 +566,8 @@ private fun XyaaApp(
                         Text(neuralVoiceStatus, style = MaterialTheme.typography.bodySmall)
                         Button(onClick = onDownloadNeuralVoice, modifier = Modifier.fillMaxWidth()) { Text("Download neural voice (~400 MB)") }
                         Text("Kokoro runs on this phone after download. Speech generation is then offline.", style = MaterialTheme.typography.bodySmall)
+                        TextButton(onClick = onClearMemory, modifier = Modifier.fillMaxWidth()) { Text("Clear saved conversation memory") }
+                        Text("Recent chat context is stored on this device to help future replies. Clear it here at any time.", style = MaterialTheme.typography.bodySmall, color = Color(0xFF9B9BB0))
                     }
                 },
                 confirmButton = {
