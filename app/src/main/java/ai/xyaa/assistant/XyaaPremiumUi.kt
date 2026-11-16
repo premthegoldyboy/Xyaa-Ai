@@ -133,10 +133,10 @@ internal fun XyaaPremiumApp(
             Box(Modifier.fillMaxSize().padding(padding)) {
                 when (tab) {
                     "Orb" -> HomePage(liveVoiceActive, liveVoiceStatus, wakeWordEnabled,
-                        { tab = "Live Voice"; onStartLiveVoice() }, onStopLiveVoice, onStartWakeWord, onStopWakeWord, onVoice,
+                        { tab = "Live Voice"; onStartLiveVoice() }, onStopLiveVoice, onStartWakeWord, onStopWakeWord, { tab = "Chat"; onVoice() },
                         { submit(it) }, { tab = "Research" }, { tab = "Chat" })
                     "Live Voice" -> LiveVoicePage(liveVoiceActive, liveVoiceStatus, liveTranscript,
-                        onStartLiveVoice, onStopLiveVoice, onVoice)
+                        onStartLiveVoice, onStopLiveVoice, { tab = "Chat"; onVoice() })
                     "Chat" -> ChatPage(messages, input, { input = it }, busy, { submit(it) }, onVoice, voiceInputStatus)
                     "Research" -> ResearchPage(researchQuery, { researchQuery = it }, busy,
                         { q -> researchQuery = q; tab = "Research"; submit("Research $q") }, messages, onShareReport)
