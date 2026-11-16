@@ -12,7 +12,9 @@ import android.text.StaticLayout
 import android.text.TextPaint
 import android.os.Bundle
 import android.provider.Settings
-import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
+import android.speech.RecognitionListener
+import android.os.Bundle
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.os.Handler
@@ -53,6 +55,8 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     private val recentMemory = mutableStateOf<List<String>>(emptyList())
     private var liveVoiceSession: GeminiLiveVoiceSession? = null
     private var pdfDraft = ""
+    private var speechRecognizer: SpeechRecognizer? = null
+    private val voiceInputStatus = mutableStateOf("")
     private val liveVoiceActive = mutableStateOf(false)
     private val liveVoiceStatus = mutableStateOf("Live voice is off")
     private val liveTranscript = mutableStateOf("")
@@ -85,6 +89,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             XyaaPremiumApp(
                 onSend = { prompt, answer -> process(prompt, answer) },
                 onVoice = ::startVoiceInput,
+                voiceInputStatus = voiceInputStatus.value,
                 onSaveKey = { key -> SecureKeyStore(this).save(key) },
                 onLoadKey = { SecureKeyStore(this).read() },
                 onSaveProviderKeys = { groq, deepSeek, tavily ->
@@ -674,20 +679,94 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
 
     private fun startVoiceInput() {
         if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            voiceInputStatus.value = "Microphone permission is needed for voice input."
             requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO), 43)
             return
         }
-        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
-            putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak to XYAA")
+        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+            voiceInputStatus.value = "Speech recognition isn't available. Install or enable a speech recognition service in Android settings."
+            return
         }
-        runCatching { startActivityForResult(intent, 42) }
+        speechRecognizer?.destroy()
+        voiceInputStatus.value = "Starting microphone…"
+        runCatching {
+            val recognizer = SpeechRecognizer.createSpeechRecognizer(this)
+            speechRecognizer = recognizer
+            recognizer.setRecognitionListener(object : RecognitionListener {
+                override fun onReadyForSpeech(params: Bundle?) {
+                    runOnUiThread { voiceInputStatus.value = "Listening… speak now." }
+                }
+                override fun onBeginningOfSpeech() {
+                    runOnUiThread { voiceInputStatus.value = "Hearing you…" }
+                }
+                override fun onRmsChanged(rmsdB: Float) = Unit
+                override fun onBufferReceived(buffer: ByteArray?) = Unit
+                override fun onEndOfSpeech() {
+                    runOnUiThread { voiceInputStatus.value = "Recognizing your words…" }
+                }
+                override fun onError(error: Int) {
+                    runOnUiThread {
+                        speechRecognizer?.destroy()
+                        speechRecognizer = null
+                        voiceInputStatus.value = when (error) {
+                            SpeechRecognizer.ERROR_AUDIO -> "Microphone audio error. Check microphone access and try again."
+                            SpeechRecognizer.ERROR_CLIENT -> "Voice input was interrupted. Tap the mic and try again."
+                            SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Microphone permission is blocked. Allow it in Android app settings."
+                            SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "Speech service couldn't connect. Check your internet and try again."
+                            SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "I didn't catch that. Tap the mic and speak a little closer."
+                            SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "Speech service is busy. Wait a moment and try again."
+                            SpeechRecognizer.ERROR_SERVER -> "Speech service had a problem. Try again in a moment."
+                            SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED, SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE -> "The selected speech language isn't available on this device."
+                            else -> "Voice input failed (error $error). Tap the mic to retry."
+                        }
+                    }
+                }
+                override fun onResults(results: Bundle?) {
+                    val spoken = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.trim()
+                    runOnUiThread {
+                        speechRecognizer?.destroy()
+                        speechRecognizer = null
+                        if (spoken.isNullOrBlank()) {
+                            voiceInputStatus.value = "I didn't receive any words. Tap the mic and try again."
+                        } else {
+                            voiceInputStatus.value = "Heard: $spoken"
+                            process(spoken) { _, _ -> }
+                            Handler(Looper.getMainLooper()).postDelayed({
+                                if (voiceInputStatus.value == "Heard: $spoken") voiceInputStatus.value = ""
+                            }, 5000L)
+                        }
+                    }
+                }
+                override fun onPartialResults(partialResults: Bundle?) {
+                    val partial = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()
+                    if (!partial.isNullOrBlank()) runOnUiThread {
+                        voiceInputStatus.value = "Hearing: $partial"
+                    }
+                }
+                override fun onEvent(eventType: Int, params: Bundle?) = Unit
+            })
+            val speechIntent = Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
+                putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, Locale.getDefault().toLanguageTag())
+                putExtra(android.speech.RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+                putExtra(android.speech.RecognizerIntent.EXTRA_MAX_RESULTS, 3)
+                putExtra(android.speech.RecognizerIntent.EXTRA_PROMPT, "Speak to XYAA")
+            }
+            recognizer.startListening(speechIntent)
+        }.onFailure { error ->
+            speechRecognizer?.destroy()
+            speechRecognizer = null
+            voiceInputStatus.value = "Couldn't start voice input: ${error.message ?: "speech service unavailable"}"
+        }
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == 43 && grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) startVoiceInput()
+        if (requestCode == 43) {
+            if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) startVoiceInput()
+            else voiceInputStatus.value = "Microphone permission was denied. Allow it in Android app settings to use voice input."
+        }
         if (requestCode == 47 && grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) startLiveVoice()
         if (requestCode == 46) {
             val audioGranted = checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
@@ -717,6 +796,8 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     override fun onDestroy() {
         liveVoiceSession?.stop()
         liveVoiceSession = null
+        speechRecognizer?.destroy()
+        speechRecognizer = null
         neuralVoice.close()
         tts?.stop()
         tts?.shutdown()
