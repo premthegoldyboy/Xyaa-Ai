@@ -520,8 +520,14 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     ).containsMatchIn(prompt)
 
     private fun extractResearchTopic(prompt: String, forPdf: Boolean = false): String {
-        var topic = prompt.trim().replaceFirst(
-            Regex("^\\s*(?:research|investigate|compare|make (?:me )?a report(?: on)?|write (?:me )?a report(?: on)?|find out about|summari[sz]e (?:the )?(?:latest )?(?:news|information) about)\\s*(?:about\\s+|on\\s+)?", RegexOption.IGNORE_CASE), ""
+        val researchStart = Regex(
+            "(?i)\\b(?:research|investigate|find out about|look up information about)\\b\\s*(?:about\\s+|on\\s+)?"
+        ).find(prompt)
+        var topic = if (researchStart != null) prompt.substring(researchStart.range.last + 1).trim()
+        else prompt.trim()
+        topic = topic.replaceFirst(
+            Regex("(?i)^(?:please\\s+)?(?:can you\\s+|could you\\s+)?(?:compare|make (?:me )?a report(?: on)?|write (?:me )?a report(?: on)?|summari[sz]e)\\s*"),
+            ""
         ).trim()
         if (forPdf) {
             topic = topic.replace(
@@ -529,7 +535,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 ""
             ).trim()
         }
-        return topic.ifBlank { prompt.trim() }
+        return topic.trim().trimEnd(',', '.', '?').ifBlank { prompt.trim() }
     }
 
     private fun formatAiError(error: Throwable): String {
