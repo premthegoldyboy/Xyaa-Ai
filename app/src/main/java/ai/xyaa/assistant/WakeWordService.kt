@@ -34,7 +34,13 @@ import org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream
 class WakeWordService : Service() {
     companion object {
         const val ACTION_STOP = "ai.xyaa.assistant.STOP_WAKE_WORD"
+        const val ACTION_WAKE_DETECTED = "ai.xyaa.assistant.WAKE_DETECTED"
+        const val ACTION_STATE = "ai.xyaa.assistant.WAKE_WORD_STATE"
+        const val EXTRA_ACTIVE = "active"
+        const val EXTRA_START_LIVE_VOICE = "start_live_voice"
         private const val CHANNEL = "xyaa_wake_word"
+        private const val ALERT_CHANNEL = "xyaa_wake_word_alerts"
+        private const val ALERT_NOTIFICATION_ID = 7304
         private const val NOTIFICATION_ID = 7301
         private const val MODEL_NAME = "sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20"
         private const val MODEL_URL = "https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/$MODEL_NAME.tar.bz2"
@@ -44,6 +50,7 @@ class WakeWordService : Service() {
     @Volatile private var record: AudioRecord? = null
     @Volatile private var worker: Thread? = null
     @Volatile private var spotter: KeywordSpotter? = null
+    @Volatile private var lastAlertAt = 0L
 
     override fun onCreate() {
         super.onCreate()
@@ -101,6 +108,7 @@ class WakeWordService : Service() {
             spotter = kws
             val stream = kws.createStream()
             updateNotification("Wake word active · microphone is on")
+            sendState(true)
             val minBytes = AudioRecord.getMinBufferSize(16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
             check(minBytes > 0) { "Microphone is unavailable." }
             val audio = AudioRecord(
@@ -122,7 +130,13 @@ class WakeWordService : Service() {
                     val result = kws.getResult(stream).keyword
                     if (result.isNotBlank()) {
                         kws.reset(stream)
-                        updateNotification("I heard Hey Zyaa · tap to open XYAA")
+                        val now = System.currentTimeMillis()
+                        if (now - lastAlertAt > 30_000L) {
+                            lastAlertAt = now
+                            sendBroadcast(Intent(ACTION_WAKE_DETECTED).setPackage(packageName))
+                            showWakeAlert()
+                            updateNotification("I heard Hey Zyaa · tap the alert to talk")
+                        }
                     }
                 }
             }
@@ -130,8 +144,10 @@ class WakeWordService : Service() {
             kws.release()
         } catch (error: Throwable) {
             if (!stopping.get()) updateNotification("Wake word unavailable: ${error.message ?: "model or microphone error"}")
+            sendState(false)
         } finally {
             stopping.set(true)
+            sendState(false)
             runCatching { record?.stop(); record?.release() }
             record = null
             runCatching { spotter?.release() }
@@ -189,6 +205,7 @@ class WakeWordService : Service() {
         if (Build.VERSION.SDK_INT >= 26) {
             val manager = getSystemService(NotificationManager::class.java)
             manager.createNotificationChannel(NotificationChannel(CHANNEL, "XYAA wake word", NotificationManager.IMPORTANCE_LOW))
+            manager.createNotificationChannel(NotificationChannel(ALERT_CHANNEL, "XYAA wake word alerts", NotificationManager.IMPORTANCE_HIGH))
         }
     }
 
@@ -212,12 +229,37 @@ class WakeWordService : Service() {
             .build()
     }
 
+    private fun showWakeAlert() {
+        val open = PendingIntent.getActivity(
+            this, 7305,
+            Intent(this, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                .putExtra(EXTRA_START_LIVE_VOICE, true),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val alert = NotificationCompat.Builder(this, ALERT_CHANNEL)
+            .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+            .setContentTitle("XYAA heard you")
+            .setContentText("Tap to start talking with XYAA.")
+            .setContentIntent(open)
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .addAction(android.R.drawable.ic_btn_speak_now, "Talk now", open)
+            .build()
+        getSystemService(NotificationManager::class.java).notify(ALERT_NOTIFICATION_ID, alert)
+    }
+
+    private fun sendState(active: Boolean) {
+        sendBroadcast(Intent(ACTION_STATE).setPackage(packageName).putExtra(EXTRA_ACTIVE, active))
+    }
+
     private fun updateNotification(message: String) {
         getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification(message))
     }
 
     override fun onDestroy() {
         stopping.set(true)
+        sendState(false)
         runCatching { record?.stop() }
         worker?.interrupt()
         super.onDestroy()
