@@ -302,6 +302,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         })
         val neuralQueued = neuralVoice.speak(
             spoken,
+            onChunk = { spokenSoFar -> handler.post { onProgress(spokenSoFar) } },
             onComplete = {
                 handler.post {
                     stopFallback()
