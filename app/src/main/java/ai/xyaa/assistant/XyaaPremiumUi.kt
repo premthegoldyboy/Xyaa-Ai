@@ -296,9 +296,10 @@ private fun ChatPage(
             contentPadding = PaddingValues(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             items(messages) { (text, fromUser) ->
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = if (fromUser) Arrangement.End else Arrangement.Start, verticalAlignment = Alignment.CenterVertically) {
-                    if (!fromUser && text == "Thinking…") {
+                    if (!fromUser && (text == "Thinking…" || text == "Speaking…")) {
                         EnergyOrb(Modifier.size(58.dp), active = true)
-                        Text("XYAA is thinking", Modifier.padding(start = 8.dp), color = Cyan, fontSize = 12.sp)
+                        Text(if (text == "Thinking…") "XYAA is thinking" else "XYAA is speaking",
+                            Modifier.padding(start = 8.dp), color = Cyan, fontSize = 12.sp)
                     } else {
                         Surface(color = if (fromUser) Color(0xFF39245D) else Panel,
                             shape = RoundedCornerShape(18.dp), modifier = Modifier.widthIn(max = 330.dp).border(1.dp, Line, RoundedCornerShape(18.dp))) {
