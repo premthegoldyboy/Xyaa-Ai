@@ -774,3 +774,74 @@ private fun XyaaApp(
                 }
                 Text(liveVoiceStatus, Modifier.padding(horizontal = 18.dp, vertical = 3.dp),
                     style = MaterialTheme.typography.bodySmall, color = Color(0xFF9B9BB0))
+                if (liveTranscript.isNotBlank()) {
+                    Surface(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp),
+                        color = Color(0xFF171C2A), shape = RoundedCornerShape(14.dp)) {
+                        Text(liveTranscript, Modifier.padding(10.dp), style = MaterialTheme.typography.bodySmall,
+                            color = Color(0xFFE4E2F0), maxLines = 5)
+                    }
+                }
+                LazyColumn(
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    items(messages) { message ->
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = if (message.fromUser) Arrangement.End else Arrangement.Start) {
+                            Surface(
+                                color = if (message.fromUser) Color(0xFF51427F) else Color(0xFF1B2030),
+                                shape = RoundedCornerShape(18.dp, 18.dp, if (message.fromUser) 5.dp else 18.dp, if (message.fromUser) 18.dp else 5.dp),
+                                modifier = Modifier.widthIn(max = 310.dp)
+                            ) {
+                                Text(message.text, Modifier.padding(horizontal = 15.dp, vertical = 12.dp), color = Color(0xFFF3F1FC))
+                            }
+                        }
+                    }
+                }
+                Text("QUICK ACTIONS", Modifier.padding(start = 18.dp, top = 4.dp), style = MaterialTheme.typography.labelSmall, color = Color(0xFF9293AA), letterSpacing = 1.5.sp)
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    quick.forEach { action ->
+                        SuggestionChip(onClick = { input = action }, label = { Text(action, maxLines = 1) })
+                    }
+                }
+            }
+        }
+        if (settingsOpen) {
+            AlertDialog(
+                onDismissRequest = { settingsOpen = false },
+                title = { Text("XYAA settings") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text("Add a Gemini API key to enable open-ended AI chat. Built-in device skills work without it.")
+                        OutlinedTextField(value = apiKey, onValueChange = { apiKey = it },
+                            label = { Text("Gemini API key") }, singleLine = true)
+                        Text("The key is encrypted with Android Keystore on this device.", style = MaterialTheme.typography.bodySmall)
+                        Text("Backup AI providers", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                        OutlinedTextField(value = groqKey, onValueChange = { groqKey = it }, label = { Text("Groq API key (optional)") }, singleLine = true, visualTransformation = PasswordVisualTransformation())
+                        OutlinedTextField(value = deepSeekKey, onValueChange = { deepSeekKey = it }, label = { Text("DeepSeek API key (optional)") }, singleLine = true, visualTransformation = PasswordVisualTransformation())
+                        OutlinedTextField(value = tavilyKey, onValueChange = { tavilyKey = it }, label = { Text("Tavily search key (optional)") }, singleLine = true, visualTransformation = PasswordVisualTransformation())
+                        Text("Optional keys are encrypted with Android Keystore. Gemini is tried first; Groq and DeepSeek are automatic chat fallbacks. Tavily backs up web research.", style = MaterialTheme.typography.bodySmall, color = Color(0xFF9B9BB0))
+                        HorizontalDivider()
+                        Text("XYAA Neural Voice", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                        Text(neuralVoiceStatus, style = MaterialTheme.typography.bodySmall)
+                        Button(onClick = onDownloadNeuralVoice, modifier = Modifier.fillMaxWidth()) { Text("Download neural voice (~400 MB)") }
+                        Text("Kokoro runs on this phone after download. Speech generation is then offline.", style = MaterialTheme.typography.bodySmall)
+                        TextButton(onClick = onClearMemory, modifier = Modifier.fillMaxWidth()) { Text("Clear saved conversation memory") }
+                        Text("Recent chat context is stored on this device to help future replies. Clear it here at any time.", style = MaterialTheme.typography.bodySmall, color = Color(0xFF9B9BB0))
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        onSaveKey(apiKey.trim())
+                        onSaveProviderKeys(groqKey.trim(), deepSeekKey.trim(), tavilyKey.trim())
+                        settingsOpen = false
+                    }) { Text("Save") }
+                },
+                dismissButton = { TextButton(onClick = { settingsOpen = false }) { Text("Cancel") } }
+            )
+        }
+    }
+}
