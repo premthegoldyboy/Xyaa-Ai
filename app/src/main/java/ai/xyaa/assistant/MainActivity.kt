@@ -49,6 +49,7 @@ import java.util.Locale
 class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     private var tts: TextToSpeech? = null
     private lateinit var skills: SkillEngine
+    private lateinit var managementAgent: ManagementAgent
     private lateinit var neuralVoice: NeuralVoiceEngine
     private lateinit var conversationMemory: ConversationMemory
     private val recentMemory = mutableStateOf<List<String>>(emptyList())
@@ -79,6 +80,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         skills = SkillEngine(this)
+        managementAgent = ManagementAgent(this)
         conversationMemory = ConversationMemory(this)
         recentMemory.value = conversationMemory.recentTurns().map { "${it.role}: ${it.text}" }
         neuralVoice = NeuralVoiceEngine(this) { status -> runOnUiThread { neuralVoiceStatus.value = status } }
@@ -349,6 +351,13 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
 
     private fun process(prompt: String, answer: (String, Boolean) -> Unit) {
         rememberTurn("user", prompt)
+        val managed = managementAgent.execute(prompt)
+        if (managed != null) {
+            rememberTurn("assistant", managed)
+            answer(managed, true)
+            say(managed)
+            return
+        }
         if (LinkAgent.matches(prompt)) {
             val result = LinkAgent.generate(prompt)
             rememberTurn("assistant", result)
@@ -828,7 +837,10 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         if (requestCode == 71 && resultCode == Activity.RESULT_OK) {
             data?.data?.let { uri ->
                 runCatching { writePdf(uri) }
-                    .onSuccess { say("Your PDF has been saved.") }
+                    .onSuccess {
+                        managementAgent.registerPdf(uri)
+                        say("Your PDF has been saved and added to your XYAA library.")
+                    }
                     .onFailure { error -> say("PDF export failed: " + error.message.orEmpty().take(100)) }
             }
         }
