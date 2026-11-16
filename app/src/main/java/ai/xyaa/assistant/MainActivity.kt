@@ -42,6 +42,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     private lateinit var skills: SkillEngine
     private lateinit var neuralVoice: NeuralVoiceEngine
     private lateinit var conversationMemory: ConversationMemory
+    private val recentMemory = mutableStateOf<List<String>>(emptyList())
     private var liveVoiceSession: GeminiLiveVoiceSession? = null
     private val liveVoiceActive = mutableStateOf(false)
     private val liveVoiceStatus = mutableStateOf("Live voice is off")
@@ -67,11 +68,12 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         super.onCreate(savedInstanceState)
         skills = SkillEngine(this)
         conversationMemory = ConversationMemory(this)
+        recentMemory.value = conversationMemory.recentTurns().map { "${it.role}: ${it.text}" }
         neuralVoice = NeuralVoiceEngine(this) { status -> runOnUiThread { neuralVoiceStatus.value = status } }
         neuralVoice.initializeIfInstalled()
         tts = TextToSpeech(this, this)
         setContent {
-            XyaaApp(
+            XyaaPremiumApp(
                 onSend = { prompt, answer -> process(prompt, answer) },
                 onVoice = ::startVoiceInput,
                 onSaveKey = { key -> SecureKeyStore(this).save(key) },
@@ -82,7 +84,9 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 onLoadProviderKeys = { ProviderKeyStore(this).let { listOf(it.read("groq").orEmpty(), it.read("deepseek").orEmpty(), it.read("tavily").orEmpty()) } },
                 neuralVoiceStatus = neuralVoiceStatus.value,
                 onDownloadNeuralVoice = { neuralVoice.downloadAndInitialize() },
-                onClearMemory = { conversationMemory.clear() },
+                onClearMemory = { conversationMemory.clear(); recentMemory.value = emptyList() },
+                onShareReport = ::shareResearchReport,
+                recentMemory = recentMemory.value,
                 liveVoiceActive = liveVoiceActive.value,
                 liveVoiceStatus = liveVoiceStatus.value,
                 liveTranscript = liveTranscript.value,
@@ -224,11 +228,25 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         }
     }
 
+    private fun shareResearchReport(report: String) {
+        val sendIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_SUBJECT, "XYAA Research Report")
+            putExtra(Intent.EXTRA_TEXT, report)
+        }
+        runCatching { startActivity(Intent.createChooser(sendIntent, "Share research report")) }
+    }
+
+    private fun rememberTurn(role: String, text: String) {
+        conversationMemory.remember(role, text)
+        recentMemory.value = conversationMemory.recentTurns().map { "${it.role}: ${it.text}" }
+    }
+
     private fun process(prompt: String, answer: (String, Boolean) -> Unit) {
-        conversationMemory.remember("user", prompt)
+        rememberTurn("user", prompt)
         val local = skills.execute(prompt)
         if (local != null) {
-            conversationMemory.remember("assistant", local)
+            rememberTurn("assistant", local)
             answer(local, true)
             say(local)
             return
@@ -240,7 +258,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         val tavilyKey = providerKeys.read("tavily")
         if (key.isNullOrBlank() && groqKey.isNullOrBlank() && deepSeekKey.isNullOrBlank()) {
             val message = "I can handle built-in skills offline. Add a Gemini, Groq, or DeepSeek API key in Settings to enable AI conversations."
-            conversationMemory.remember("assistant", message)
+            rememberTurn("assistant", message)
             answer(message, true)
             say(message)
             return
@@ -287,12 +305,12 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 }
                 report.onSuccess { result ->
                     val rendered = result.asText()
-                    conversationMemory.remember("assistant", rendered.take(1800))
+                    rememberTurn("assistant", rendered.take(1800))
                     runOnUiThread { answer(rendered, true) }
                     say(result.spoken.ifBlank { "Research report completed." })
                 }.onFailure { error ->
                     val message = "Research failed: ${error.message.orEmpty().take(180)}"
-                    conversationMemory.remember("assistant", message)
+                    rememberTurn("assistant", message)
                     runOnUiThread { answer(message, true) }
                     say(message)
                 }
@@ -345,7 +363,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             }.getOrElse { formatAiError(it) }
 
             if (speechBuffer.isNotBlank()) speakStreamChunk(speechBuffer.toString())
-            conversationMemory.remember("assistant", response)
+            rememberTurn("assistant", response)
             runOnUiThread {
                 answer(response, true)
                 // If streaming produced no speakable text (for example, an API error), use
