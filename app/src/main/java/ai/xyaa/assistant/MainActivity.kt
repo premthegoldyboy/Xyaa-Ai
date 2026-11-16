@@ -38,12 +38,33 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     private lateinit var skills: SkillEngine
     private lateinit var neuralVoice: NeuralVoiceEngine
     private lateinit var conversationMemory: ConversationMemory
+    private lateinit var agentOrchestrator: AgentOrchestrator
     private val neuralVoiceStatus = mutableStateOf("Neural voice not downloaded (about 400 MB)")
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         skills = SkillEngine(this)
         conversationMemory = ConversationMemory(this)
+        agentOrchestrator = AgentOrchestrator(listOf(
+            object : AgentOrchestrator.Specialist {
+                override val name = "conversation-memory"
+                override fun handle(task: AgentOrchestrator.Task): String? {
+                    val lower = task.input.lowercase(Locale.ROOT)
+                    if (!listOf("what did i say", "do you remember", "what was", "recall", "previously").any(lower::contains)) return null
+                    val terms = lower.split(Regex("\\W+")).filter { it.length > 3 && it !in setOf("remember", "previously", "about", "what", "that", "this") }.toSet()
+                    if (terms.isEmpty()) return null
+                    val match = conversationMemory.recentTurns().dropLast(1).asReversed().firstOrNull { turn -> terms.any { term -> turn.text.lowercase(Locale.ROOT).contains(term) } } ?: return null
+                    return "From our recent conversation: " + match.text
+                }
+            },
+            object : AgentOrchestrator.Specialist {
+                override val name = "android-skills"
+                override fun handle(task: AgentOrchestrator.Task): String? = skills.execute(task.input)
+            }
+        ))
+        if (android.os.Build.VERSION.SDK_INT >= 33 && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 44)
+        }
         neuralVoice = NeuralVoiceEngine(this) { status -> runOnUiThread { neuralVoiceStatus.value = status } }
         neuralVoice.initializeIfInstalled()
         tts = TextToSpeech(this, this)
@@ -94,7 +115,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
 
     private fun process(prompt: String, answer: (String, Boolean) -> Unit) {
         conversationMemory.remember("user", prompt)
-        val local = skills.execute(prompt)
+        val local = agentOrchestrator.execute(AgentOrchestrator.Task(prompt, conversationMemory.contextForPrompt()))?.output
         if (local != null) {
             conversationMemory.remember("assistant", local)
             answer(local, true)

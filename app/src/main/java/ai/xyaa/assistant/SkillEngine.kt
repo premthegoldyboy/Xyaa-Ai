@@ -26,6 +26,26 @@ class SkillEngine(private val context: Context) {
             return "Today is " + SimpleDateFormat("EEEE, d MMMM yyyy", Locale.getDefault()).format(Date()) + "."
         }
 
+        val reminder = Regex("^remind me in (\\d+)\\s*(minutes?|mins?|hours?|hrs?|days?) to (.+)$", RegexOption.IGNORE_CASE).find(text)
+        if (reminder != null) {
+            val amount = reminder.groupValues[1].toLongOrNull() ?: return "That reminder time is too large."
+            val unit = reminder.groupValues[2].lowercase(Locale.ROOT)
+            val multiplier = when {
+                unit.startsWith("day") -> 1440L
+                unit.startsWith("hour") || unit.startsWith("hr") -> 60L
+                else -> 1L
+            }
+            val delay = runCatching { Math.multiplyExact(amount, multiplier) }.getOrNull()
+                ?: return "That reminder time is too large."
+            if (delay !in 1L..10080L) return "Choose a reminder between 1 minute and 7 days."
+            val detail = reminder.groupValues[3].trim().take(500)
+            if (detail.isBlank()) return "What should I remind you about?"
+            return runCatching {
+                BackgroundTaskScheduler(context).scheduleReminder(delay, detail)
+                "Done. I'll remind you in $amount $unit about: $detail"
+            }.getOrElse { "I couldn't schedule that reminder: ${it.message ?: "unknown error"}" }
+        }
+
         val note = Regex("^(?:remember|save|take) (?:a )?note(?: that)?[: ]+(.+)$", RegexOption.IGNORE_CASE).find(text)
         if (note != null) {
             val old = prefs.getString("notes", "").orEmpty()
