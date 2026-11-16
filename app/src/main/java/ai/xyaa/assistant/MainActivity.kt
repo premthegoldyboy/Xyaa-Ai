@@ -154,22 +154,26 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                             val delta = partial.substring(lastStreamLength)
                             lastStreamLength = partial.length
                             speechBuffer.append(delta)
-                            // Speak complete sentences as soon as they arrive; do not wait for
-                            // Gemini's final event or for offline neural synthesis of the full reply.
+                            // Low-latency speech: emit the opening phrase after five complete
+                            // words, then use ten-word chunks. Punctuation is preferred when
+                            // available, but we never wait for the entire sentence or final SSE event.
                             while (true) {
                                 val current = speechBuffer.toString()
                                 val boundary = Regex("[,;.!?][\\s\\n]+").find(current)
                                 if (boundary != null) {
                                     val wordsBeforeBoundary = current.substring(0, boundary.range.first).trim().split(Regex("\\s+")).size
-                                    if (boundary.value.first() == ',' && wordsBeforeBoundary < 5) break
-                                    val end = boundary.range.first + 1
-                                    speakStreamChunk(current.substring(0, end))
-                                    speechBuffer.delete(0, boundary.range.last + 1)
-                                    continue
+                                    if (boundary.value.first() == ',' && wordsBeforeBoundary < 4) {
+                                        // A short comma clause is not a useful standalone utterance.
+                                    } else {
+                                        val end = boundary.range.first + 1
+                                        speakStreamChunk(current.substring(0, end))
+                                        speechBuffer.delete(0, boundary.range.last + 1)
+                                        continue
+                                    }
                                 }
-                                val twentiethWord = Regex("^(?:\\S+\\s+){19}\\S+").find(current) ?: break
-                                val cut = twentiethWord.range.last + 1
-                                if (cut >= current.length) break
+                                val threshold = if (firstSpeechChunk) 5 else 10
+                                val readyWords = Regex("^(?:\\S+\\s+){${threshold - 1}}\\S+\\s").find(current) ?: break
+                                val cut = readyWords.range.last + 1
                                 speakStreamChunk(current.substring(0, cut))
                                 speechBuffer.delete(0, cut)
                             }
