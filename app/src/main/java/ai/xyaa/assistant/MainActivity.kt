@@ -358,6 +358,34 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             say(managed)
             return
         }
+        if (managementAgent.isManagementRequest(prompt)) {
+            val key = SecureKeyStore(this).read()
+            val providers = ProviderKeyStore(this)
+            val groq = providers.read("groq")
+            val deepSeek = providers.read("deepseek")
+            if (key.isNullOrBlank() && groq.isNullOrBlank() && deepSeek.isNullOrBlank()) {
+                val message = "The management agent needs an AI provider key to interpret that request. Simple note and PDF commands still work offline."
+                rememberTurn("assistant", message)
+                answer(message, true)
+                say(message)
+                return
+            }
+            answer("XYAA management agent is planning…", false)
+            Thread {
+                val plan = runCatching {
+                    if (!key.isNullOrBlank()) askGemini(key, managementAgent.plannerPrompt(prompt), {}, {})
+                    else ProviderFallbackClient(groq, deepSeek).complete(managementAgent.plannerPrompt(prompt)) {}
+                }.getOrElse { "Could not create a safe management plan: ${it.message.orEmpty().take(120)}" }
+                val result = managementAgent.executePlan(plan, prompt)
+                    ?: "I couldn't turn that request into a safe file operation. Please specify the note or PDF and the action."
+                rememberTurn("assistant", result)
+                runOnUiThread {
+                    answer(result, true)
+                    speakChatAnswer(result, onProgress = { visible -> answer(visible, false) }, onComplete = { answer(result, true) })
+                }
+            }.start()
+            return
+        }
         if (LinkAgent.matches(prompt)) {
             val result = LinkAgent.generate(prompt)
             rememberTurn("assistant", result)
