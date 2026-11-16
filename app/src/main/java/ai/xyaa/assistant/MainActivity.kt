@@ -2,6 +2,8 @@ package ai.xyaa.assistant
 
 import android.app.Activity
 import android.content.Intent
+import android.content.BroadcastReceiver
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.provider.Settings
@@ -9,6 +11,7 @@ import android.speech.RecognizerIntent
 import android.speech.tts.TextToSpeech
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -38,6 +41,25 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     private lateinit var skills: SkillEngine
     private lateinit var neuralVoice: NeuralVoiceEngine
     private lateinit var conversationMemory: ConversationMemory
+    private var liveVoiceSession: GeminiLiveVoiceSession? = null
+    private val liveVoiceActive = mutableStateOf(false)
+    private val liveVoiceStatus = mutableStateOf("Live voice is off")
+    private val liveTranscript = mutableStateOf("")
+    private val wakeWordEnabled = mutableStateOf(false)
+    private var wakeReceiverRegistered = false
+    private val wakeWordReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: android.content.Context?, intent: Intent?) {
+            when (intent?.action) {
+                WakeWordService.ACTION_STATE -> wakeWordEnabled.value = intent.getBooleanExtra(WakeWordService.EXTRA_ACTIVE, false)
+                WakeWordService.ACTION_WAKE_DETECTED -> {
+                    wakeWordEnabled.value = false
+                    liveVoiceStatus.value = "Wake word detected · opening live voice…"
+                    stopWakeWord()
+                    window.decorView.postDelayed({ startLiveVoice() }, 600)
+                }
+            }
+        }
+    }
     private val neuralVoiceStatus = mutableStateOf("Neural voice not downloaded (about 400 MB)")
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -55,9 +77,114 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 onLoadKey = { SecureKeyStore(this).read() },
                 neuralVoiceStatus = neuralVoiceStatus.value,
                 onDownloadNeuralVoice = { neuralVoice.downloadAndInitialize() },
-                onClearMemory = { conversationMemory.clear() }
+                onClearMemory = { conversationMemory.clear() },
+                liveVoiceActive = liveVoiceActive.value,
+                liveVoiceStatus = liveVoiceStatus.value,
+                liveTranscript = liveTranscript.value,
+                onStartLiveVoice = ::startLiveVoice,
+                onStopLiveVoice = ::stopLiveVoice,
+                wakeWordEnabled = wakeWordEnabled.value,
+                onStartWakeWord = ::startWakeWord,
+                onStopWakeWord = ::stopWakeWord
             )
         }
+        if (intent?.getBooleanExtra(WakeWordService.EXTRA_START_LIVE_VOICE, false) == true) {
+            window.decorView.postDelayed({ stopWakeWord(); startLiveVoice() }, 700)
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        if (!wakeReceiverRegistered) {
+            val filter = IntentFilter().apply {
+                addAction(WakeWordService.ACTION_STATE)
+                addAction(WakeWordService.ACTION_WAKE_DETECTED)
+            }
+            ContextCompat.registerReceiver(this, wakeWordReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+            wakeReceiverRegistered = true
+        }
+    }
+
+    override fun onStop() {
+        if (wakeReceiverRegistered) {
+            unregisterReceiver(wakeWordReceiver)
+            wakeReceiverRegistered = false
+        }
+        super.onStop()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent.getBooleanExtra(WakeWordService.EXTRA_START_LIVE_VOICE, false)) {
+            window.decorView.postDelayed({ stopWakeWord(); startLiveVoice() }, 600)
+        }
+    }
+
+    private fun startLiveVoice() {
+        if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO), 47)
+            liveVoiceStatus.value = "Allow microphone access to start live voice."
+            return
+        }
+        val key = SecureKeyStore(this).read()
+        if (key.isNullOrBlank()) {
+            liveVoiceStatus.value = "Add your Gemini API key in Settings first."
+            return
+        }
+        if (liveVoiceActive.value) return
+        liveTranscript.value = ""
+        liveVoiceActive.value = true
+        liveVoiceSession = GeminiLiveVoiceSession(
+            context = this,
+            apiKey = key,
+            onStatus = { status -> runOnUiThread { liveVoiceStatus.value = status } },
+            onTranscript = { text, fromUser ->
+                runOnUiThread {
+                    val line = (if (fromUser) "You: " else "XYAA: ") + text.trim()
+                    liveTranscript.value = (liveTranscript.value + "\n" + line).trim().takeLast(2400)
+                }
+            },
+            onClosed = {
+                runOnUiThread {
+                    liveVoiceActive.value = false
+                    liveVoiceSession = null
+                }
+            }
+        ).also { it.start() }
+    }
+
+    private fun stopLiveVoice() {
+        liveVoiceSession?.stop()
+        liveVoiceSession = null
+        liveVoiceActive.value = false
+        liveVoiceStatus.value = "Live voice is off"
+    }
+
+    private fun startWakeWord() {
+        if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED ||
+            (android.os.Build.VERSION.SDK_INT >= 33 &&
+                checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)) {
+            val permissions = mutableListOf(android.Manifest.permission.RECORD_AUDIO)
+            if (android.os.Build.VERSION.SDK_INT >= 33 &&
+                checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                permissions.add(android.Manifest.permission.POST_NOTIFICATIONS)
+            }
+            requestPermissions(permissions.toTypedArray(), 46)
+            return
+        }
+        runCatching {
+            ContextCompat.startForegroundService(this, Intent(this, WakeWordService::class.java))
+            wakeWordEnabled.value = true
+        }.onFailure {
+            liveVoiceStatus.value = "Wake word couldn't start: ${it.message ?: "Android blocked the microphone service"}"
+            wakeWordEnabled.value = false
+        }
+    }
+
+    private fun stopWakeWord() {
+        stopService(Intent(this, WakeWordService::class.java))
+        wakeWordEnabled.value = false
     }
 
     override fun onInit(status: Int) {
@@ -392,6 +519,14 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == 43 && grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) startVoiceInput()
+        if (requestCode == 47 && grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) startLiveVoice()
+        if (requestCode == 46) {
+            val audioGranted = checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+            val notificationsGranted = android.os.Build.VERSION.SDK_INT < 33 ||
+                checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+            if (audioGranted && notificationsGranted) startWakeWord()
+            else liveVoiceStatus.value = "Wake word needs microphone and notification permissions."
+        }
     }
 
     @Deprecated("Deprecated by Android; retained for compatibility.")
@@ -405,6 +540,8 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     }
 
     override fun onDestroy() {
+        liveVoiceSession?.stop()
+        liveVoiceSession = null
         neuralVoice.close()
         tts?.stop()
         tts?.shutdown()
@@ -423,7 +560,15 @@ private fun XyaaApp(
     onLoadKey: () -> String?,
     neuralVoiceStatus: String,
     onDownloadNeuralVoice: () -> Unit,
-    onClearMemory: () -> Unit
+    onClearMemory: () -> Unit,
+    liveVoiceActive: Boolean,
+    liveVoiceStatus: String,
+    liveTranscript: String,
+    onStartLiveVoice: () -> Unit,
+    onStopLiveVoice: () -> Unit,
+    wakeWordEnabled: Boolean,
+    onStartWakeWord: () -> Unit,
+    onStopWakeWord: () -> Unit
 ) {
     var input by remember { mutableStateOf("") }
     var messages by remember { mutableStateOf(listOf(ChatMessage("Hey! I'm Zyaa. I can launch apps, search, set timers, calculate, save notes and much more. Ask me anything.", false))) }
@@ -519,6 +664,29 @@ private fun XyaaApp(
                             Spacer(Modifier.width(6.dp))
                             Text("READY", style = MaterialTheme.typography.labelSmall, color = Color(0xFF8CE3BB))
                         }
+                    }
+                }
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Button(onClick = { if (liveVoiceActive) onStopLiveVoice() else onStartLiveVoice() },
+                        modifier = Modifier.weight(1f)) {
+                        Text(if (liveVoiceActive) "End live voice" else "Start live voice")
+                    }
+                    OutlinedButton(onClick = { if (wakeWordEnabled) onStopWakeWord() else onStartWakeWord() },
+                        modifier = Modifier.weight(1f)) {
+                        Text(if (wakeWordEnabled) "Wake word: ON" else "Enable wake word")
+                    }
+                }
+                Text(liveVoiceStatus, Modifier.padding(horizontal = 18.dp, vertical = 3.dp),
+                    style = MaterialTheme.typography.bodySmall, color = Color(0xFF9B9BB0))
+                if (liveTranscript.isNotBlank()) {
+                    Surface(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp),
+                        color = Color(0xFF171C2A), shape = RoundedCornerShape(14.dp)) {
+                        Text(liveTranscript, Modifier.padding(10.dp), style = MaterialTheme.typography.bodySmall,
+                            color = Color(0xFFE4E2F0), maxLines = 5)
                     }
                 }
                 LazyColumn(
