@@ -5,6 +5,8 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
+import android.provider.DocumentsContract.Document
+import java.util.ArrayDeque
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
@@ -39,13 +41,55 @@ class ManagementAgent(context: Context) {
         }
         val name = queryName(uri) ?: fallbackName
         val records = readPdfs()
-        val existing = records.indexOfFirst { it.optString("uri") == uri.toString() }
-        val item = JSONObject()
-            .put("uri", uri.toString())
-            .put("name", name)
+        upsertPdf(uri, name)
+    }
+
+    private fun upsertPdf(uri: Uri, name: String) {
+        val records = readPdfs()
+        var existing = -1
+        for (i in 0 until records.length()) {
+            if (records.getJSONObject(i).optString("uri") == uri.toString()) { existing = i; break }
+        }
+        val item = JSONObject().put("uri", uri.toString()).put("name", name)
             .put("savedAt", System.currentTimeMillis())
         if (existing >= 0) records.put(existing, item) else records.put(item)
-        prefs.edit().putString(KEY_PDFS, records.toString()).apply()
+        writePdfs(records)
+    }
+
+    /** Index PDFs in a user-selected folder tree using Android's scoped document access. */
+    fun importPdfFolder(treeUri: Uri): Int {
+        app.contentResolver.takePersistableUriPermission(
+            treeUri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+        )
+        val rootId = DocumentsContract.getTreeDocumentId(treeUri)
+        val pending = ArrayDeque<Pair<String, Int>>()
+        pending.add(rootId to 0)
+        val visited = HashSet<String>()
+        var imported = 0
+        while (pending.isNotEmpty() && visited.size < 1500) {
+            val (parentId, depth) = pending.removeFirst()
+            if (!visited.add(parentId) || depth > 8) continue
+            val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentId)
+            val columns = arrayOf(Document.COLUMN_DOCUMENT_ID, Document.COLUMN_DISPLAY_NAME, Document.COLUMN_MIME_TYPE)
+            app.contentResolver.query(childrenUri, columns, null, null, null)?.use { cursor ->
+                val idCol = cursor.getColumnIndexOrThrow(Document.COLUMN_DOCUMENT_ID)
+                val nameCol = cursor.getColumnIndexOrThrow(Document.COLUMN_DISPLAY_NAME)
+                val mimeCol = cursor.getColumnIndexOrThrow(Document.COLUMN_MIME_TYPE)
+                while (cursor.moveToNext()) {
+                    val id = cursor.getString(idCol) ?: continue
+                    val name = cursor.getString(nameCol).orEmpty()
+                    val mime = cursor.getString(mimeCol).orEmpty()
+                    if (mime == Document.MIME_TYPE_DIR) {
+                        if (depth < 8) pending.add(id to depth + 1)
+                    } else if (mime.equals("application/pdf", true) || name.endsWith(".pdf", true)) {
+                        val documentUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, id)
+                        upsertPdf(documentUri, name.ifBlank { "Document.pdf" })
+                        imported++
+                    }
+                }
+            }
+        }
+        return imported
     }
 
     private fun handleNotes(text: String, lower: String): String? {
