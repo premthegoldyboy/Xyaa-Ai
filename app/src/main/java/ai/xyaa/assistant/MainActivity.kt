@@ -49,6 +49,7 @@ import java.util.Locale
 class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     private var tts: TextToSpeech? = null
     private lateinit var skills: SkillEngine
+    private lateinit var managementAgent: ManagementAgent
     private lateinit var neuralVoice: NeuralVoiceEngine
     private lateinit var conversationMemory: ConversationMemory
     private val recentMemory = mutableStateOf<List<String>>(emptyList())
@@ -79,6 +80,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         skills = SkillEngine(this)
+        managementAgent = ManagementAgent(this)
         conversationMemory = ConversationMemory(this)
         recentMemory.value = conversationMemory.recentTurns().map { "${it.role}: ${it.text}" }
         neuralVoice = NeuralVoiceEngine(this) { status -> runOnUiThread { neuralVoiceStatus.value = status } }
@@ -347,8 +349,59 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         recentMemory.value = conversationMemory.recentTurns().map { "${it.role}: ${it.text}" }
     }
 
+    private fun launchPdfFolderPicker() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
+                Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        }
+        runCatching { startActivityForResult(intent, 72) }
+            .onFailure { say("I couldn't open the folder picker: ${it.message.orEmpty().take(100)}") }
+    }
+
     private fun process(prompt: String, answer: (String, Boolean) -> Unit) {
         rememberTurn("user", prompt)
+        if (Regex("(?i)\\b(scan|import|index)\\b").containsMatchIn(prompt) &&
+            Regex("(?i)\\b(phone|device|storage|folder|all|my)\\b").containsMatchIn(prompt) &&
+            Regex("(?i)\\b(pdf|pdfs|documents)\\b").containsMatchIn(prompt)) {
+            answer("Choose the folder that contains your PDFs. XYAA will scan that folder and its subfolders.", true)
+            launchPdfFolderPicker()
+            return
+        }
+        val managed = managementAgent.execute(prompt)
+        if (managed != null) {
+            rememberTurn("assistant", managed)
+            answer(managed, true)
+            say(managed)
+            return
+        }
+        if (managementAgent.isManagementRequest(prompt)) {
+            val key = SecureKeyStore(this).read()
+            val providers = ProviderKeyStore(this)
+            val groq = providers.read("groq")
+            val deepSeek = providers.read("deepseek")
+            if (key.isNullOrBlank() && groq.isNullOrBlank() && deepSeek.isNullOrBlank()) {
+                val message = "The management agent needs an AI provider key to interpret that request. Simple note and PDF commands still work offline."
+                rememberTurn("assistant", message)
+                answer(message, true)
+                say(message)
+                return
+            }
+            answer("XYAA management agent is planning…", false)
+            Thread {
+                val plan = runCatching {
+                    if (!key.isNullOrBlank()) askGemini(key, managementAgent.plannerPrompt(prompt), {}, {})
+                    else ProviderFallbackClient(groq, deepSeek).complete(managementAgent.plannerPrompt(prompt)) {}
+                }.getOrElse { "Could not create a safe management plan: ${it.message.orEmpty().take(120)}" }
+                val result = managementAgent.executePlan(plan, prompt)
+                    ?: "I couldn't turn that request into a safe file operation. Please specify the note or PDF and the action."
+                rememberTurn("assistant", result)
+                runOnUiThread {
+                    answer(result, true)
+                    speakChatAnswer(result, onProgress = { visible -> answer(visible, false) }, onComplete = { answer(result, true) })
+                }
+            }.start()
+            return
+        }
         if (LinkAgent.matches(prompt)) {
             val result = LinkAgent.generate(prompt)
             rememberTurn("assistant", result)
@@ -828,9 +881,25 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         if (requestCode == 71 && resultCode == Activity.RESULT_OK) {
             data?.data?.let { uri ->
                 runCatching { writePdf(uri) }
-                    .onSuccess { say("Your PDF has been saved.") }
+                    .onSuccess {
+                        managementAgent.registerPdf(uri)
+                        say("Your PDF has been saved and added to your XYAA library.")
+                    }
                     .onFailure { error -> say("PDF export failed: " + error.message.orEmpty().take(100)) }
             }
+        }
+        if (requestCode == 72 && resultCode == Activity.RESULT_OK) {
+            val treeUri = data?.data
+            if (treeUri != null) {
+                say("Scanning the selected folder for PDFs…")
+                Thread {
+                    val result = runCatching { managementAgent.importPdfFolder(treeUri) }
+                    runOnUiThread {
+                        result.onSuccess { count -> say("Folder scan complete. I added $count PDF files to your XYAA library.") }
+                            .onFailure { error -> say("I couldn't scan that folder: " + error.message.orEmpty().take(120)) }
+                    }
+                }.start()
+            } else say("No folder was selected.")
         }
     }
 
