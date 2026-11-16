@@ -27,6 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.json.JSONArray
@@ -75,6 +76,10 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 onVoice = ::startVoiceInput,
                 onSaveKey = { key -> SecureKeyStore(this).save(key) },
                 onLoadKey = { SecureKeyStore(this).read() },
+                onSaveProviderKeys = { groq, deepSeek, tavily ->
+                    ProviderKeyStore(this).apply { save("groq", groq); save("deepseek", deepSeek); save("tavily", tavily) }
+                },
+                onLoadProviderKeys = { ProviderKeyStore(this).let { listOf(it.read("groq").orEmpty(), it.read("deepseek").orEmpty(), it.read("tavily").orEmpty()) } },
                 neuralVoiceStatus = neuralVoiceStatus.value,
                 onDownloadNeuralVoice = { neuralVoice.downloadAndInitialize() },
                 onClearMemory = { conversationMemory.clear() },
@@ -229,8 +234,12 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             return
         }
         val key = SecureKeyStore(this).read()
-        if (key.isNullOrBlank()) {
-            val message = "I can handle built-in skills offline. Add your Gemini API key in Settings to enable open-ended AI conversations."
+        val providerKeys = ProviderKeyStore(this)
+        val groqKey = providerKeys.read("groq")
+        val deepSeekKey = providerKeys.read("deepseek")
+        val tavilyKey = providerKeys.read("tavily")
+        if (key.isNullOrBlank() && groqKey.isNullOrBlank() && deepSeekKey.isNullOrBlank()) {
+            val message = "I can handle built-in skills offline. Add a Gemini, Groq, or DeepSeek API key in Settings to enable AI conversations."
             conversationMemory.remember("assistant", message)
             answer(message, true)
             say(message)
@@ -268,7 +277,30 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             val memoryContext = conversationMemory.contextForPrompt()
             val contextualPrompt = if (memoryContext.isBlank()) prompt else
                 "Relevant recent conversation context (use only when helpful):\\n$memoryContext\\n\\nCurrent request: $prompt"
+
+            if (isResearchRequest(prompt)) {
+                val topic = extractResearchTopic(prompt)
+                val report = runCatching {
+                    ResearchEngine(key, tavilyKey, groqKey, deepSeekKey).research(topic) { status ->
+                        runOnUiThread { answer(status, false) }
+                    }
+                }
+                report.onSuccess { result ->
+                    val rendered = result.asText()
+                    conversationMemory.remember("assistant", rendered.take(1800))
+                    runOnUiThread { answer(rendered, true) }
+                    say(result.spoken.ifBlank { "Research report completed." })
+                }.onFailure { error ->
+                    val message = "Research failed: ${error.message.orEmpty().take(180)}"
+                    conversationMemory.remember("assistant", message)
+                    runOnUiThread { answer(message, true) }
+                    say(message)
+                }
+                return@Thread
+            }
+
             val response = runCatching {
+                if (key.isNullOrBlank()) throw IllegalStateException("Gemini key not configured.")
                 askGemini(
                     key,
                     contextualPrompt,
@@ -304,6 +336,12 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                         runOnUiThread { answer(partial, false) }
                     }
                 )
+            }.recoverCatching { geminiError ->
+                if (groqKey.isNullOrBlank() && deepSeekKey.isNullOrBlank()) throw geminiError
+                runOnUiThread { answer("Gemini unavailable · switching to a backup brain…", false) }
+                ProviderFallbackClient(groqKey, deepSeekKey).complete(contextualPrompt) { provider ->
+                    runOnUiThread { answer("Connected to $provider…", false) }
+                }
             }.getOrElse { formatAiError(it) }
 
             if (speechBuffer.isNotBlank()) speakStreamChunk(speechBuffer.toString())
@@ -317,6 +355,15 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         }.start()
     }
 
+
+    private fun isResearchRequest(prompt: String): Boolean = Regex(
+        "^\\s*(research|investigate|compare|make (?:me )?a report(?: on)?|write (?:me )?a report(?: on)?|find out about|summari[sz]e (?:the )?(?:latest )?(?:news|information) about)\\b",
+        RegexOption.IGNORE_CASE
+    ).containsMatchIn(prompt)
+
+    private fun extractResearchTopic(prompt: String): String = prompt.trim().replaceFirst(
+        Regex("^\\s*(?:research|investigate|compare|make (?:me )?a report(?: on)?|write (?:me )?a report(?: on)?|find out about|summari[sz]e (?:the )?(?:latest )?(?:news|information) about)\\s*", RegexOption.IGNORE_CASE), ""
+    ).trim().ifBlank { prompt.trim() }
 
     private fun formatAiError(error: Throwable): String {
         val detail = error.message.orEmpty()
@@ -558,6 +605,8 @@ private fun XyaaApp(
     onVoice: () -> Unit,
     onSaveKey: (String) -> Unit,
     onLoadKey: () -> String?,
+    onSaveProviderKeys: (String, String, String) -> Unit,
+    onLoadProviderKeys: () -> List<String>,
     neuralVoiceStatus: String,
     onDownloadNeuralVoice: () -> Unit,
     onClearMemory: () -> Unit,
@@ -575,7 +624,10 @@ private fun XyaaApp(
     var busy by remember { mutableStateOf(false) }
     var settingsOpen by remember { mutableStateOf(false) }
     var apiKey by remember { mutableStateOf("") }
-    val quick = listOf("Open YouTube", "What's the time?", "Set a timer for 5 minutes", "Search the web")
+    var groqKey by remember { mutableStateOf("") }
+    var deepSeekKey by remember { mutableStateOf("") }
+    var tavilyKey by remember { mutableStateOf("") }
+    val quick = listOf("Open YouTube", "What's the time?", "Set a timer for 5 minutes", "Research latest AI news")
 
     MaterialTheme(
         colorScheme = darkColorScheme(
@@ -605,6 +657,10 @@ private fun XyaaApp(
                     actions = {
                         IconButton(onClick = {
                             apiKey = onLoadKey().orEmpty()
+                            val backupKeys = onLoadProviderKeys()
+                            groqKey = backupKeys.getOrNull(0).orEmpty()
+                            deepSeekKey = backupKeys.getOrNull(1).orEmpty()
+                            tavilyKey = backupKeys.getOrNull(2).orEmpty()
                             settingsOpen = true
                         }) { Icon(Icons.Default.Settings, "Settings") }
                     },
@@ -729,6 +785,11 @@ private fun XyaaApp(
                             label = { Text("Gemini API key") }, singleLine = true
                         )
                         Text("The key is encrypted with Android Keystore on this device.", style = MaterialTheme.typography.bodySmall)
+                        Text("Backup AI providers", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                        OutlinedTextField(value = groqKey, onValueChange = { groqKey = it }, label = { Text("Groq API key (optional)") }, singleLine = true, visualTransformation = PasswordVisualTransformation())
+                        OutlinedTextField(value = deepSeekKey, onValueChange = { deepSeekKey = it }, label = { Text("DeepSeek API key (optional)") }, singleLine = true, visualTransformation = PasswordVisualTransformation())
+                        OutlinedTextField(value = tavilyKey, onValueChange = { tavilyKey = it }, label = { Text("Tavily search key (optional)") }, singleLine = true, visualTransformation = PasswordVisualTransformation())
+                        Text("Optional keys are encrypted with Android Keystore. Gemini is tried first; Groq and DeepSeek are automatic chat fallbacks. Tavily backs up web research.", style = MaterialTheme.typography.bodySmall, color = Color(0xFF9B9BB0))
                         HorizontalDivider()
                         Text("XYAA Neural Voice", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                         Text(neuralVoiceStatus, style = MaterialTheme.typography.bodySmall)
@@ -739,7 +800,11 @@ private fun XyaaApp(
                     }
                 },
                 confirmButton = {
-                    TextButton(onClick = { onSaveKey(apiKey.trim()); settingsOpen = false }) { Text("Save") }
+                    TextButton(onClick = {
+                        onSaveKey(apiKey.trim())
+                        onSaveProviderKeys(groqKey.trim(), deepSeekKey.trim(), tavilyKey.trim())
+                        settingsOpen = false
+                    }) { Text("Save") }
                 },
                 dismissButton = { TextButton(onClick = { settingsOpen = false }) { Text("Cancel") } }
             )
