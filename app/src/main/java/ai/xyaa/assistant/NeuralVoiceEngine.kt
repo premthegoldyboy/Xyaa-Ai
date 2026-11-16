@@ -127,7 +127,7 @@ class NeuralVoiceEngine(private val context: Context, private val onStatus: (Str
     }
 
     private fun speechChunks(text: String, maxChars: Int = 240): List<String> {
-        val sentences = text.replace("\\n", " ").split(Regex("(?<=[.!?])\\s+"))
+        val sentences = text.replace("\n", " ").split(Regex("(?<=[.!?])\\s+"))
             .map { it.trim() }.filter { it.isNotEmpty() }
         val chunks = mutableListOf<String>()
         var current = StringBuilder()
