@@ -53,7 +53,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                     if (!listOf("what did i say", "do you remember", "what was", "recall", "previously").any(lower::contains)) return null
                     val terms = lower.split(Regex("\\W+")).filter { it.length > 3 && it !in setOf("remember", "previously", "about", "what", "that", "this") }.toSet()
                     if (terms.isEmpty()) return null
-                    val match = conversationMemory.recentTurns().asReversed().firstOrNull { turn -> terms.any { term -> turn.text.lowercase(Locale.ROOT).contains(term) } } ?: return null
+                    val match = conversationMemory.recentTurns().dropLast(1).asReversed().firstOrNull { turn -> terms.any { term -> turn.text.lowercase(Locale.ROOT).contains(term) } } ?: return null
                     return "From our recent conversation: " + match.text
                 }
             },
