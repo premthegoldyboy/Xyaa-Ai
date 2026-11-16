@@ -384,7 +384,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             rememberTurn("assistant", response)
             runOnUiThread {
                 // The complete answer is now available; text begins revealing only as speech starts.
-                answer("", false)
+                answer("Speaking…", false)
                 speakChatAnswer(response,
                     onProgress = { visible -> answer(visible, false) },
                     onComplete = { answer(response, true) })
