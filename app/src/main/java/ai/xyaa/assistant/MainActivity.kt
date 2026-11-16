@@ -891,9 +891,14 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         if (requestCode == 72 && resultCode == Activity.RESULT_OK) {
             val treeUri = data?.data
             if (treeUri != null) {
-                runCatching { managementAgent.importPdfFolder(treeUri) }
-                    .onSuccess { count -> say("Folder scan complete. I added $count PDF files to your XYAA library.") }
-                    .onFailure { error -> say("I couldn't scan that folder: " + error.message.orEmpty().take(120)) }
+                say("Scanning the selected folder for PDFs…")
+                Thread {
+                    val result = runCatching { managementAgent.importPdfFolder(treeUri) }
+                    runOnUiThread {
+                        result.onSuccess { count -> say("Folder scan complete. I added $count PDF files to your XYAA library.") }
+                            .onFailure { error -> say("I couldn't scan that folder: " + error.message.orEmpty().take(120)) }
+                    }
+                }.start()
             } else say("No folder was selected.")
         }
     }
