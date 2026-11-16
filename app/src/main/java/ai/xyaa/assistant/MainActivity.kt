@@ -779,11 +779,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     @Deprecated("Deprecated by Android; retained for compatibility.")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == 42 && resultCode == Activity.RESULT_OK) {
-            data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let { spoken ->
-                process(spoken) { _, _ -> /* Voice result is spoken by process(). */ }
-            }
-        } else if (requestCode == 71 && resultCode == Activity.RESULT_OK) {
+        if (requestCode == 71 && resultCode == Activity.RESULT_OK) {
             data?.data?.let { uri ->
                 runCatching { writePdf(uri) }
                     .onSuccess { say("Your PDF has been saved.") }
