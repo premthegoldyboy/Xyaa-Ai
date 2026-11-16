@@ -5,6 +5,11 @@ import android.content.Intent
 import android.content.BroadcastReceiver
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.graphics.Paint
+import android.graphics.pdf.PdfDocument
+import android.text.Layout
+import android.text.StaticLayout
+import android.text.TextPaint
 import android.os.Bundle
 import android.provider.Settings
 import android.speech.RecognizerIntent
@@ -47,6 +52,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     private lateinit var conversationMemory: ConversationMemory
     private val recentMemory = mutableStateOf<List<String>>(emptyList())
     private var liveVoiceSession: GeminiLiveVoiceSession? = null
+    private var pdfDraft = ""
     private val liveVoiceActive = mutableStateOf(false)
     private val liveVoiceStatus = mutableStateOf("Live voice is off")
     private val liveTranscript = mutableStateOf("")
@@ -314,6 +320,13 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
 
     private fun process(prompt: String, answer: (String, Boolean) -> Unit) {
         rememberTurn("user", prompt)
+        if (LinkAgent.matches(prompt)) {
+            val result = LinkAgent.generate(prompt)
+            rememberTurn("assistant", result)
+            answer(result, true)
+            say("Links prepared.")
+            return
+        }
         val local = skills.execute(prompt)
         if (local != null) {
             rememberTurn("assistant", local)
@@ -338,8 +351,10 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         answer("Thinking…", false)
         Thread {
             val memoryContext = conversationMemory.contextForPrompt()
-            val contextualPrompt = if (memoryContext.isBlank()) prompt else
-                "Relevant recent conversation context (use only when helpful):\\n$memoryContext\\n\\nCurrent request: $prompt"
+            val contextualPrompt = "You are XYAA, a helpful, precise personal AI. Answer directly, structure complex answers with headings and steps, explain uncertainty, and never invent sources or claim actions you did not perform.\\n\\n" +
+                (if (memoryContext.isBlank()) "" else "Recent context:\\n$memoryContext\\n\\n") + "Current request: $prompt"
+            val pdfRequest = PdfAgent.isRequest(prompt)
+            val aiPrompt = if (pdfRequest) PdfAgent.contentPrompt(prompt) else contextualPrompt
 
             if (isResearchRequest(prompt)) {
                 val topic = extractResearchTopic(prompt)
@@ -369,14 +384,14 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 if (key.isNullOrBlank()) throw IllegalStateException("Gemini key not configured.")
                 askGemini(
                     key,
-                    contextualPrompt,
+                    aiPrompt,
                     onStatus = { _ -> runOnUiThread { answer("Thinking…", false) } },
                     onText = { _ -> /* Keep generated tokens hidden until Gemini completes. */ }
                 )
             }.recoverCatching { geminiError ->
                 if (groqKey.isNullOrBlank() && deepSeekKey.isNullOrBlank()) throw geminiError
                 runOnUiThread { answer("Thinking…", false) }
-                ProviderFallbackClient(groqKey, deepSeekKey).complete(contextualPrompt) { _ ->
+                ProviderFallbackClient(groqKey, deepSeekKey).complete(aiPrompt) { _ ->
                     runOnUiThread { answer("Thinking…", false) }
                 }
             }.getOrElse { formatAiError(it) }
@@ -387,9 +402,80 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 answer("Speaking…", false)
                 speakChatAnswer(response,
                     onProgress = { visible -> answer(visible, false) },
-                    onComplete = { answer(response, true) })
+                    onComplete = {
+                        answer(response, true)
+                        if (pdfRequest && response.isNotBlank()) {
+                            pdfDraft = response
+                            openPdfPicker()
+                        }
+                    })
             }
         }.start()
+    }
+
+
+    private fun openPdfPicker() {
+        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "application/pdf"
+            putExtra(Intent.EXTRA_TITLE, "XYAA-Document.pdf")
+        }
+        startActivityForResult(intent, 71)
+    }
+
+    private fun writePdf(uri: android.net.Uri) {
+        val document = PdfDocument()
+        val bodyPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = android.graphics.Color.rgb(42, 40, 52)
+            textSize = 11f
+        }
+        val headingPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = android.graphics.Color.rgb(48, 35, 82)
+            textSize = 18f
+            isFakeBoldText = true
+        }
+        val pageWidth = 595
+        val pageHeight = 842
+        val margin = 48
+        val contentWidth = pageWidth - margin * 2
+        var pageNumber = 0
+        var page = document.startPage(PdfDocument.PageInfo.Builder(pageWidth, pageHeight, ++pageNumber).create())
+        var y = 54f
+        fun nextPage() {
+            document.finishPage(page)
+            page = document.startPage(PdfDocument.PageInfo.Builder(pageWidth, pageHeight, ++pageNumber).create())
+            y = 54f
+        }
+        try {
+            pdfDraft.replace("\r", "").lines().forEach { raw ->
+                val line = raw.trim()
+                if (line.isBlank()) {
+                    y += 8f
+                } else {
+                    val isHeading = line.startsWith("#")
+                    val clean = line.replace(Regex("^#{1,6}\\s*"), "")
+                        .replace(Regex("^[-*]\\s+"), "• ")
+                    val paint = if (isHeading) headingPaint else bodyPaint
+                    val layout = StaticLayout.Builder.obtain(clean, 0, clean.length, paint, contentWidth)
+                        .setAlignment(Layout.Alignment.ALIGN_NORMAL)
+                        .setIncludePad(false)
+                        .setLineSpacing(2f, 1f)
+                        .build()
+                    val blockHeight = layout.height + if (isHeading) 8 else 4
+                    if (y + blockHeight > pageHeight - margin) nextPage()
+                    page.canvas.save()
+                    page.canvas.translate(margin.toFloat(), y)
+                    layout.draw(page.canvas)
+                    page.canvas.restore()
+                    y += blockHeight
+                }
+            }
+            document.finishPage(page)
+            contentResolver.openOutputStream(uri)?.use { document.writeTo(it) }
+                ?: error("Could not open the selected save location")
+        } finally {
+            document.close()
+        }
     }
 
     private fun isResearchRequest(prompt: String): Boolean = Regex(
@@ -618,6 +704,12 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         if (requestCode == 42 && resultCode == Activity.RESULT_OK) {
             data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let { spoken ->
                 process(spoken) { _, _ -> /* Voice result is spoken by process(). */ }
+            }
+        } else if (requestCode == 71 && resultCode == Activity.RESULT_OK) {
+            data?.data?.let { uri ->
+                runCatching { writePdf(uri) }
+                    .onSuccess { say("Your PDF has been saved.") }
+                    .onFailure { error -> say("PDF export failed: " + error.message.orEmpty().take(100)) }
             }
         }
     }
