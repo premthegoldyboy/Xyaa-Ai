@@ -9,6 +9,9 @@ import android.os.Bundle
 import android.provider.Settings
 import android.speech.RecognizerIntent
 import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
+import android.os.Handler
+import android.os.Looper
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.core.content.ContextCompat
@@ -228,6 +231,73 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         }
     }
 
+    /**
+     * Chat answers are spoken only after the provider has finished generating.
+     * Android TTS range callbacks reveal the same characters currently being spoken.
+     * A paced fallback is used for engines that do not emit range callbacks.
+     */
+    private fun speakChatAnswer(text: String, onProgress: (String) -> Unit, onComplete: () -> Unit) {
+        val engine = tts
+        if (engine == null || text.isBlank()) {
+            onProgress(text)
+            onComplete()
+            return
+        }
+        val spoken = text
+            .replace(Regex("(?i)\\bX\\s*Y\\s*A\\s*A\\b"), "Zyaa")
+            .replace(Regex("(?i)\\bXYAA\\b"), "Zyaa")
+        val utteranceId = "xyaa-chat-" + System.nanoTime()
+        val handler = Handler(Looper.getMainLooper())
+        var sawRange = false
+        var wordIndex = 0
+        val words = text.split(Regex("\\s+")).filter { it.isNotBlank() }
+        var fallback: Runnable? = null
+        fun stopFallback() { fallback?.let(handler::removeCallbacks); fallback = null }
+        engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+            override fun onStart(id: String?) {
+                if (id != utteranceId) return
+                handler.postDelayed({
+                    if (!sawRange && wordIndex < words.size) {
+                        val starts = Regex("\\S+").findAll(text).toList()
+                        fun revealNext() {
+                            if (sawRange || wordIndex >= starts.size) return
+                            val end = starts[wordIndex].range.last + 1
+                            onProgress(text.substring(0, end))
+                            wordIndex++
+                            fallback = Runnable { revealNext() }
+                            handler.postDelayed(fallback!!, 340L)
+                        }
+                        revealNext()
+                    }
+                }, 650L)
+            }
+            override fun onRangeStart(id: String?, start: Int, end: Int, frame: Int) {
+                if (id != utteranceId) return
+                sawRange = true
+                stopFallback()
+                handler.post { onProgress(text.substring(0, end.coerceIn(0, text.length))) }
+            }
+            override fun onDone(id: String?) {
+                if (id != utteranceId) return
+                stopFallback()
+                handler.post { onProgress(text); onComplete() }
+            }
+            @Deprecated("Deprecated in Java")
+            override fun onError(id: String?) {
+                if (id != utteranceId) return
+                stopFallback()
+                handler.post { onProgress(text); onComplete() }
+            }
+            override fun onError(id: String?, errorCode: Int) = onError(id)
+        })
+        val result = engine.speak(spoken, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
+        if (result == TextToSpeech.ERROR) {
+            stopFallback()
+            onProgress(text)
+            onComplete()
+        }
+    }
+
     private fun shareResearchReport(report: String) {
         val sendIntent = Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
@@ -263,35 +333,10 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             say(message)
             return
         }
-        answer("Connecting to Gemini…", false)
+
+        // Keep the animated orb visible for the entire generation phase.
+        answer("Thinking…", false)
         Thread {
-            val speechBuffer = StringBuilder()
-            var lastStreamLength = 0
-            var hasSpokenStream = false
-            var firstSpeechChunk = true
-
-            fun speakStreamChunk(chunk: String) {
-                val clean = chunk.trim()
-                if (clean.isBlank()) return
-                hasSpokenStream = true
-                val queueMode = if (firstSpeechChunk) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
-                firstSpeechChunk = false
-                val spoken = clean
-                    .replace(Regex("(?i)\\bX\\s*Y\\s*A\\s*A\\b"), "Zyaa")
-                    .replace(Regex("(?i)\\bXYAA\\b"), "Zyaa")
-                // Prefer Kokoro for streamed Gemini sentences; retain Android TTS as fallback.
-                val neuralQueued = neuralVoice.speak(spoken) {
-                    runOnUiThread {
-                        tts?.speak(spoken, queueMode, null, "xyaa-stream-fallback-" + System.nanoTime())
-                    }
-                }
-                if (!neuralQueued) {
-                    runOnUiThread {
-                        tts?.speak(spoken, queueMode, null, "xyaa-stream-" + System.nanoTime())
-                    }
-                }
-            }
-
             val memoryContext = conversationMemory.contextForPrompt()
             val contextualPrompt = if (memoryContext.isBlank()) prompt else
                 "Relevant recent conversation context (use only when helpful):\\n$memoryContext\\n\\nCurrent request: $prompt"
@@ -299,20 +344,23 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             if (isResearchRequest(prompt)) {
                 val topic = extractResearchTopic(prompt)
                 val report = runCatching {
-                    ResearchEngine(key, tavilyKey, groqKey, deepSeekKey).research(topic) { status ->
-                        runOnUiThread { answer(status, false) }
+                    ResearchEngine(key, tavilyKey, groqKey, deepSeekKey).research(topic) { _ ->
+                        runOnUiThread { answer("Thinking…", false) }
                     }
                 }
                 report.onSuccess { result ->
                     val rendered = result.asText()
                     rememberTurn("assistant", rendered.take(1800))
-                    runOnUiThread { answer(rendered, true) }
-                    say(result.spoken.ifBlank { "Research report completed." })
+                    runOnUiThread {
+                        answer(rendered, false)
+                        speakChatAnswer(result.spoken.ifBlank { "Research report completed." },
+                            onProgress = { visible -> answer(visible, false) },
+                            onComplete = { answer(rendered, true) })
+                    }
                 }.onFailure { error ->
                     val message = "Research failed: ${error.message.orEmpty().take(180)}"
                     rememberTurn("assistant", message)
-                    runOnUiThread { answer(message, true) }
-                    say(message)
+                    runOnUiThread { answer(message, false); speakChatAnswer(message, { answer(it, false) }) { answer(message, true) } }
                 }
                 return@Thread
             }
@@ -322,59 +370,27 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 askGemini(
                     key,
                     contextualPrompt,
-                    onStatus = { status -> runOnUiThread { answer(status, false) } },
-                    onText = { partial ->
-                        if (partial.isEmpty()) {
-                            speechBuffer.clear()
-                            lastStreamLength = 0
-                        } else if (partial.length >= lastStreamLength) {
-                            val delta = partial.substring(lastStreamLength)
-                            lastStreamLength = partial.length
-                            speechBuffer.append(delta)
-                            // Start speech as soon as five complete words are available.
-                            // Then stream in ten-word phrases; punctuation is used immediately
-                            // when it forms a natural boundary, without waiting for the SSE turn to end.
-                            while (true) {
-                                val current = speechBuffer.toString()
-                                val boundary = Regex("[,;.!?](?:[\\s\\n]+|$)").find(current)
-                                if (boundary != null) {
-                                    val phrase = current.substring(0, boundary.range.first + 1).trim()
-                                    val words = phrase.split(Regex("\\s+")).size
-                                    if (phrase.isNotBlank() && (boundary.value.first() != ',' || words >= 4)) {
-                                        speakStreamChunk(phrase)
-                                        speechBuffer.delete(0, boundary.range.last + 1)
-                                        continue
-                                    }
-                                }
-                                val threshold = if (firstSpeechChunk) 5 else 10
-                                val readyPhrase = Regex("^(?:\\S+\\s+){${threshold - 1}}\\S+\\s").find(current) ?: break
-                                val cut = readyPhrase.range.last + 1
-                                speakStreamChunk(current.substring(0, cut))
-                                speechBuffer.delete(0, cut)
-                            }
-                        }
-                        runOnUiThread { answer(partial, false) }
-                    }
+                    onStatus = { _ -> runOnUiThread { answer("Thinking…", false) } },
+                    onText = { _ -> /* Keep generated tokens hidden until Gemini completes. */ }
                 )
             }.recoverCatching { geminiError ->
                 if (groqKey.isNullOrBlank() && deepSeekKey.isNullOrBlank()) throw geminiError
-                runOnUiThread { answer("Gemini unavailable · switching to a backup brain…", false) }
-                ProviderFallbackClient(groqKey, deepSeekKey).complete(contextualPrompt) { provider ->
-                    runOnUiThread { answer("Connected to $provider…", false) }
+                runOnUiThread { answer("Thinking…", false) }
+                ProviderFallbackClient(groqKey, deepSeekKey).complete(contextualPrompt) { _ ->
+                    runOnUiThread { answer("Thinking…", false) }
                 }
             }.getOrElse { formatAiError(it) }
 
-            if (speechBuffer.isNotBlank()) speakStreamChunk(speechBuffer.toString())
             rememberTurn("assistant", response)
             runOnUiThread {
-                answer(response, true)
-                // If streaming produced no speakable text (for example, an API error), use
-                // the normal voice path. Otherwise the streamed sentences are already queued.
-                if (!hasSpokenStream) say(response)
+                // The complete answer is now available; text begins revealing only as speech starts.
+                answer("", false)
+                speakChatAnswer(response,
+                    onProgress = { visible -> answer(visible, false) },
+                    onComplete = { answer(response, true) })
             }
         }.start()
     }
-
 
     private fun isResearchRequest(prompt: String): Boolean = Regex(
         "^\\s*(research|investigate|compare|make (?:me )?a report(?: on)?|write (?:me )?a report(?: on)?|find out about|summari[sz]e (?:the )?(?:latest )?(?:news|information) about)\\b",
@@ -758,76 +774,3 @@ private fun XyaaApp(
                 }
                 Text(liveVoiceStatus, Modifier.padding(horizontal = 18.dp, vertical = 3.dp),
                     style = MaterialTheme.typography.bodySmall, color = Color(0xFF9B9BB0))
-                if (liveTranscript.isNotBlank()) {
-                    Surface(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp),
-                        color = Color(0xFF171C2A), shape = RoundedCornerShape(14.dp)) {
-                        Text(liveTranscript, Modifier.padding(10.dp), style = MaterialTheme.typography.bodySmall,
-                            color = Color(0xFFE4E2F0), maxLines = 5)
-                    }
-                }
-                LazyColumn(
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    items(messages) { message ->
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = if (message.fromUser) Arrangement.End else Arrangement.Start) {
-                            Surface(
-                                color = if (message.fromUser) Color(0xFF51427F) else Color(0xFF1B2030),
-                                shape = RoundedCornerShape(18.dp, 18.dp, if (message.fromUser) 5.dp else 18.dp, if (message.fromUser) 18.dp else 5.dp),
-                                modifier = Modifier.widthIn(max = 310.dp)
-                            ) {
-                                Text(message.text, Modifier.padding(horizontal = 15.dp, vertical = 12.dp), color = Color(0xFFF3F1FC))
-                            }
-                        }
-                    }
-                }
-                Text("QUICK ACTIONS", Modifier.padding(start = 18.dp, top = 4.dp), style = MaterialTheme.typography.labelSmall, color = Color(0xFF9293AA), letterSpacing = 1.5.sp)
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    quick.forEach { action ->
-                        SuggestionChip(onClick = { input = action }, label = { Text(action, maxLines = 1) })
-                    }
-                }
-            }
-        }
-        if (settingsOpen) {
-            AlertDialog(
-                onDismissRequest = { settingsOpen = false },
-                title = { Text("XYAA settings") },
-                text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text("Add a Gemini API key to enable open-ended AI chat. Built-in device skills work without it.")
-                        OutlinedTextField(
-                            value = apiKey, onValueChange = { apiKey = it },
-                            label = { Text("Gemini API key") }, singleLine = true
-                        )
-                        Text("The key is encrypted with Android Keystore on this device.", style = MaterialTheme.typography.bodySmall)
-                        Text("Backup AI providers", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                        OutlinedTextField(value = groqKey, onValueChange = { groqKey = it }, label = { Text("Groq API key (optional)") }, singleLine = true, visualTransformation = PasswordVisualTransformation())
-                        OutlinedTextField(value = deepSeekKey, onValueChange = { deepSeekKey = it }, label = { Text("DeepSeek API key (optional)") }, singleLine = true, visualTransformation = PasswordVisualTransformation())
-                        OutlinedTextField(value = tavilyKey, onValueChange = { tavilyKey = it }, label = { Text("Tavily search key (optional)") }, singleLine = true, visualTransformation = PasswordVisualTransformation())
-                        Text("Optional keys are encrypted with Android Keystore. Gemini is tried first; Groq and DeepSeek are automatic chat fallbacks. Tavily backs up web research.", style = MaterialTheme.typography.bodySmall, color = Color(0xFF9B9BB0))
-                        HorizontalDivider()
-                        Text("XYAA Neural Voice", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                        Text(neuralVoiceStatus, style = MaterialTheme.typography.bodySmall)
-                        Button(onClick = onDownloadNeuralVoice, modifier = Modifier.fillMaxWidth()) { Text("Download neural voice (~400 MB)") }
-                        Text("Kokoro runs on this phone after download. Speech generation is then offline.", style = MaterialTheme.typography.bodySmall)
-                        TextButton(onClick = onClearMemory, modifier = Modifier.fillMaxWidth()) { Text("Clear saved conversation memory") }
-                        Text("Recent chat context is stored on this device to help future replies. Clear it here at any time.", style = MaterialTheme.typography.bodySmall, color = Color(0xFF9B9BB0))
-                    }
-                },
-                confirmButton = {
-                    TextButton(onClick = {
-                        onSaveKey(apiKey.trim())
-                        onSaveProviderKeys(groqKey.trim(), deepSeekKey.trim(), tavilyKey.trim())
-                        settingsOpen = false
-                    }) { Text("Save") }
-                },
-                dismissButton = { TextButton(onClick = { settingsOpen = false }) { Text("Cancel") } }
-            )
-        }
-    }
-}
