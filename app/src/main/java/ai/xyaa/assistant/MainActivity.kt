@@ -300,6 +300,31 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             }
             override fun onError(id: String?, errorCode: Int) = onError(id)
         })
+        val neuralQueued = neuralVoice.speak(
+            spoken,
+            onComplete = {
+                handler.post {
+                    stopFallback()
+                    onProgress(text)
+                    onComplete()
+                }
+            },
+            fallback = {
+                handler.post {
+                    val fallbackResult = engine.speak(spoken, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
+                    if (fallbackResult == TextToSpeech.ERROR) {
+                        stopFallback()
+                        onProgress(text)
+                        onComplete()
+                    }
+                }
+            }
+        )
+        if (neuralQueued) {
+            stopFallback()
+            onProgress(text)
+            return
+        }
         val result = engine.speak(spoken, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
         if (result == TextToSpeech.ERROR) {
             stopFallback()
@@ -360,8 +385,10 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             val pdfRequest = PdfAgent.isRequest(prompt)
             val aiPrompt = if (pdfRequest) PdfAgent.contentPrompt(prompt) else contextualPrompt
 
-            if (isResearchRequest(prompt)) {
-                val topic = extractResearchTopic(prompt)
+            val researchRequest = isResearchRequest(prompt) ||
+                (pdfRequest && Regex("\\b(research|investigate|look up|find information|in-depth|detailed report)\\b", RegexOption.IGNORE_CASE).containsMatchIn(prompt))
+            if (researchRequest) {
+                val topic = extractResearchTopic(prompt, pdfRequest)
                 val report = runCatching {
                     ResearchEngine(key, tavilyKey, groqKey, deepSeekKey).research(topic) { _ ->
                         runOnUiThread { answer("Thinking…", false) }
@@ -370,11 +397,15 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 report.onSuccess { result ->
                     val rendered = result.asText()
                     rememberTurn("assistant", rendered.take(1800))
+                    if (pdfRequest) pdfDraft = rendered
                     runOnUiThread {
                         answer(rendered, false)
                         speakChatAnswer(result.spoken.ifBlank { "Research report completed." },
                             onProgress = { visible -> answer(visible, false) },
-                            onComplete = { answer(rendered, true) })
+                            onComplete = {
+                                answer(rendered, true)
+                                if (pdfRequest) openPdfPicker()
+                            })
                     }
                 }.onFailure { error ->
                     val message = "Research failed: ${error.message.orEmpty().take(180)}"
@@ -487,9 +518,18 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         RegexOption.IGNORE_CASE
     ).containsMatchIn(prompt)
 
-    private fun extractResearchTopic(prompt: String): String = prompt.trim().replaceFirst(
-        Regex("^\\s*(?:research|investigate|compare|make (?:me )?a report(?: on)?|write (?:me )?a report(?: on)?|find out about|summari[sz]e (?:the )?(?:latest )?(?:news|information) about)\\s*", RegexOption.IGNORE_CASE), ""
-    ).trim().ifBlank { prompt.trim() }
+    private fun extractResearchTopic(prompt: String, forPdf: Boolean = false): String {
+        var topic = prompt.trim().replaceFirst(
+            Regex("^\\s*(?:research|investigate|compare|make (?:me )?a report(?: on)?|write (?:me )?a report(?: on)?|find out about|summari[sz]e (?:the )?(?:latest )?(?:news|information) about)\\s*(?:about\\s+|on\\s+)?", RegexOption.IGNORE_CASE), ""
+        ).trim()
+        if (forPdf) {
+            topic = topic.replace(
+                Regex("(?i)\\s+(?:and\\s+)?(?:make|create|generate|export|save)\\s+(?:me\\s+)?(?:a\\s+)?pdf(?:\\s+of\\s+(?:it|this|the report))?.*$"),
+                ""
+            ).trim()
+        }
+        return topic.ifBlank { prompt.trim() }
+    }
 
     private fun formatAiError(error: Throwable): String {
         val detail = error.message.orEmpty()
