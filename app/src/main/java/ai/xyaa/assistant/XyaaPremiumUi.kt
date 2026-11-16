@@ -125,8 +125,10 @@ internal fun XyaaPremiumApp(
             Box(Modifier.fillMaxSize().padding(padding)) {
                 when (tab) {
                     "Orb" -> HomePage(liveVoiceActive, liveVoiceStatus, wakeWordEnabled,
-                        onStartLiveVoice, onStopLiveVoice, onStartWakeWord, onStopWakeWord, onVoice,
+                        { tab = "Live Voice"; onStartLiveVoice() }, onStopLiveVoice, onStartWakeWord, onStopWakeWord, onVoice,
                         { submit(it) }, { tab = "Research" }, { tab = "Chat" })
+                    "Live Voice" -> LiveVoicePage(liveVoiceActive, liveVoiceStatus, liveTranscript,
+                        onStartLiveVoice, onStopLiveVoice, onVoice)
                     "Chat" -> ChatPage(messages, input, { input = it }, busy, { submit(it) }, onVoice)
                     "Research" -> ResearchPage(researchQuery, { researchQuery = it }, busy,
                         { q -> researchQuery = q; tab = "Research"; submit("Research $q") }, messages)
@@ -188,7 +190,7 @@ private fun HomePage(
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             QuickCard("Deep research", Icons.Default.Search, Modifier.weight(1f), research)
             QuickCard("Open chat", Icons.Default.Forum, Modifier.weight(1f), chat)
-            QuickCard("Save a note", Icons.Default.EditNote, Modifier.weight(1f)) { action("Save a note") }
+            QuickCard("View notes", Icons.Default.EditNote, Modifier.weight(1f)) { action("Show my notes") }
         }
         Spacer(Modifier.height(20.dp))
     }
@@ -208,6 +210,47 @@ private fun EnergyOrb(modifier: Modifier = Modifier, active: Boolean = false) {
             if (active) 20f else 205f, 245f, false, Offset(c.x-r*1.72f,c.y-r*1.72f),
             androidx.compose.ui.geometry.Size(r*3.44f,r*3.44f), style = Stroke(2.dp.toPx(), cap = StrokeCap.Round))
         drawCircle(Cyan, 3.dp.toPx(), Offset(c.x + r*1.58f, c.y))
+    }
+}
+
+
+@Composable
+private fun LiveVoicePage(
+    active: Boolean, status: String, transcript: String,
+    start: () -> Unit, stop: () -> Unit, voiceInput: () -> Unit
+) {
+    Column(
+        Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF100B20), Bg)))
+            .verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Heading("Live voice", "Speak naturally with XYAA")
+        Spacer(Modifier.height(12.dp))
+        EnergyOrb(Modifier.fillMaxWidth().height(300.dp), active)
+        Surface(color = Panel2, shape = RoundedCornerShape(30.dp)) {
+            Text(if (active) "LIVE · ${status}" else status,
+                Modifier.padding(horizontal = 15.dp, vertical = 8.dp), color = Cyan, fontSize = 10.sp)
+        }
+        Spacer(Modifier.height(18.dp))
+        Surface(color = Panel, shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(15.dp)) {
+                Label("LIVE TRANSCRIPTION")
+                Text(transcript.ifBlank { "Your conversation transcript will appear here when speech is recognized." },
+                    color = if (transcript.isBlank()) Muted else White, fontSize = 13.sp, lineHeight = 20.sp)
+            }
+        }
+        Spacer(Modifier.height(20.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            OutlinedButton(onClick = voiceInput, colors = ButtonDefaults.outlinedButtonColors(contentColor = Cyan)) {
+                Icon(Icons.Default.Mic, null); Spacer(Modifier.width(6.dp)); Text("Speech input")
+            }
+            Button(onClick = { if (active) stop() else start() },
+                colors = ButtonDefaults.buttonColors(containerColor = if (active) Color(0xFF8C3657) else Violet)) {
+                Icon(if (active) Icons.Default.CallEnd else Icons.Default.GraphicEq, null)
+                Spacer(Modifier.width(7.dp)); Text(if (active) "End session" else "Start session")
+            }
+        }
+        Spacer(Modifier.height(24.dp))
     }
 }
 
