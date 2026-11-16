@@ -132,7 +132,12 @@ internal fun XyaaPremiumApp(
                     "Chat" -> ChatPage(messages, input, { input = it }, busy, { submit(it) }, onVoice)
                     "Research" -> ResearchPage(researchQuery, { researchQuery = it }, busy,
                         { q -> researchQuery = q; tab = "Research"; submit("Research $q") }, messages)
-                    "Skills" -> SkillsPage { submit(it) }
+                    "Skills" -> SkillsPage { command ->
+                        if (command in setOf("Remind me to", "Save a note that ", "Search for", "Directions to", "Translate ")) {
+                            input = command
+                            tab = "Chat"
+                        } else submit(command)
+                    }
                     "Memory" -> MemoryPage(recentMemory, memoryQuery, { memoryQuery = it }) { confirmClear = true }
                     "Settings" -> {
                         LaunchedEffect(Unit) {
@@ -319,7 +324,7 @@ private fun SkillsPage(run: (String) -> Unit) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp)) {
         Heading("Skill matrix", "Built-in Android actions and everyday tools")
         SkillSection("PRODUCTIVITY & TIME", listOf(
-            Triple("Notes",Icons.Default.EditNote,"Save a note"), Triple("Reminders",Icons.Default.Notifications,"Remind me to"),
+            Triple("Notes",Icons.Default.EditNote,"Save a note that "), Triple("Reminders",Icons.Default.Notifications,"Remind me to"),
             Triple("Timers & alarms",Icons.Default.Timer,"Set a timer for 5 minutes"), Triple("Calendar",Icons.Default.CalendarMonth,"Open calendar")
         ),run)
         SkillSection("DEVICE & UTILITIES", listOf(
@@ -328,7 +333,7 @@ private fun SkillsPage(run: (String) -> Unit) {
         ),run)
         SkillSection("INFORMATION", listOf(
             Triple("Web search",Icons.Default.Language,"Search for"), Triple("Weather",Icons.Default.Cloud,"What's the weather"),
-            Triple("News",Icons.Default.Newspaper,"News"), Triple("Translation",Icons.Default.Translate,"Translate")
+            Triple("News",Icons.Default.Newspaper,"News"), Triple("Translation",Icons.Default.Translate,"Translate ")
         ),run)
         Spacer(Modifier.height(18.dp))
     }
