@@ -25,10 +25,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -85,10 +86,11 @@ internal fun XyaaPremiumApp(
         val prompt = raw.trim()
         if (prompt.isEmpty() || busy) return
         if (tab != "Research") tab = "Chat"
-        messages = messages + (prompt to true) + ("Thinking…" to false)
+        messages = messages + (prompt to true) + ("" to false)
         input = ""
         busy = true
         onSend(prompt) { response, finished ->
+            // Keep the familiar Thinking… and Speaking… status visible while XYAA works.
             messages = messages.dropLast(1) + (response to false)
             if (finished) busy = false
         }
@@ -211,32 +213,99 @@ private fun HomePage(
 
 @Composable
 private fun EnergyOrb(modifier: Modifier = Modifier, active: Boolean = false) {
-    val motion = rememberInfiniteTransition(label = "xyaa-orb-motion")
-    val rotation by motion.animateFloat(0f, 360f, infiniteRepeatable(tween(if (active) 2600 else 6200), RepeatMode.Restart), label = "orb-rotation")
-    val pulse by motion.animateFloat(.94f, 1.06f, infiniteRepeatable(tween(if (active) 900 else 1800), RepeatMode.Reverse), label = "orb-pulse")
-    val morph by motion.animateFloat(-.12f, .12f, infiniteRepeatable(tween(2300), RepeatMode.Reverse), label = "orb-morph")
+    // Native Compose adaptation of the supplied Uiverse.io orb by andrew-manzyk (MIT):
+    // clipped molten sphere, rotating polygonal flows, and continuously shifting gradients.
+    val motion = rememberInfiniteTransition(label = "xyaa-molten-orb")
+    val rotation by motion.animateFloat(
+        0f, 360f,
+        infiniteRepeatable(tween(if (active) 2400 else 7200), RepeatMode.Restart),
+        label = "molten-rotation"
+    )
+    val morph by motion.animateFloat(
+        0f, 1f, infiniteRepeatable(tween(2100), RepeatMode.Reverse),
+        label = "molten-morph"
+    )
+    val pulse by motion.animateFloat(
+        .97f, 1.035f,
+        infiniteRepeatable(tween(if (active) 850 else 1900), RepeatMode.Reverse),
+        label = "molten-pulse"
+    )
     Canvas(modifier) {
-        val c = Offset(size.width / 2, size.height / 2)
-        val r = size.minDimension * .285f * pulse
-        drawCircle(Brush.radialGradient(listOf(Cyan.copy(alpha = .30f), Violet.copy(alpha = .22f), Color.Transparent), c, r * 2.25f), r * 2.25f, c)
-        drawCircle(Brush.radialGradient(listOf(Color(0xFFF7F0FF), Cyan.copy(alpha = .92f), Violet, Color(0xFF28134D), Bg), Offset(c.x-r*.25f,c.y-r*.28f), r*1.45f), r, c)
-        rotate(rotation, c) {
-            drawCircle(Brush.radialGradient(listOf(Cyan.copy(alpha = .85f), Violet.copy(alpha = .05f))), r*.34f, Offset(c.x+r*.57f,c.y+r*(morph+.12f)))
-            drawCircle(Brush.radialGradient(listOf(Violet.copy(alpha = .9f), Cyan.copy(alpha = .04f))), r*.30f, Offset(c.x-r*.48f,c.y-r*(morph+.18f)))
-            drawCircle(Brush.radialGradient(listOf(Color.White.copy(alpha = .75f), Cyan.copy(alpha = .02f))), r*.19f, Offset(c.x+r*.10f,c.y-r*.62f))
+        val center = Offset(size.width / 2f, size.height / 2f)
+        val radius = size.minDimension * .285f * pulse
+        drawCircle(
+            Brush.radialGradient(
+                listOf(Color(0x6646DFFF), Color(0x44945BFF), Color.Transparent),
+                center, radius * 2.05f
+            ),
+            radius * 2.05f, center
+        )
+        val sphere = Path().apply {
+            addOval(Rect(center.x - radius, center.y - radius, center.x + radius, center.y + radius))
         }
-        drawCircle(Color.White.copy(alpha = .62f), r*.05f, Offset(c.x-r*.27f,c.y-r*.3f))
-        drawCircle(Cyan.copy(alpha = .6f), r*1.34f, c, style = Stroke(1.dp.toPx()))
-        drawCircle(Violet.copy(alpha = .7f), r*1.58f, c, style = Stroke(1.dp.toPx()))
-        rotate(rotation, c) {
-            drawArc(Brush.sweepGradient(listOf(Color.Transparent,Cyan,Violet,Color.Transparent)), 20f, 245f, false,
-                Offset(c.x-r*1.72f,c.y-r*1.72f), androidx.compose.ui.geometry.Size(r*3.44f,r*3.44f),
-                style = Stroke(2.dp.toPx(), cap = StrokeCap.Round))
-            drawCircle(Cyan, 3.dp.toPx(), Offset(c.x+r*1.58f,c.y))
+        clipPath(sphere) {
+            drawCircle(
+                Brush.radialGradient(
+                    listOf(Color(0xFFFFF8FF), Color(0xFFB9A0FF), Color(0xFF7139D8),
+                        Color(0xFF211039), Color(0xFF090812)),
+                    Offset(center.x - radius * .28f, center.y - radius * .34f),
+                    radius * 1.55f
+                ), radius, center
+            )
+            rotate(rotation, center) {
+                val drift = (morph - .5f) * radius * .34f
+                val upperFlow = Path().apply {
+                    moveTo(center.x - radius * 1.05f, center.y - radius * .10f + drift)
+                    cubicTo(center.x - radius * .82f, center.y - radius * 1.02f,
+                        center.x + radius * .12f, center.y - radius * .88f - drift,
+                        center.x + radius * .98f, center.y - radius * .35f)
+                    cubicTo(center.x + radius * .55f, center.y + radius * .02f,
+                        center.x - radius * .15f, center.y + radius * .12f + drift,
+                        center.x - radius * 1.05f, center.y - radius * .10f + drift)
+                    close()
+                }
+                val lowerFlow = Path().apply {
+                    moveTo(center.x - radius * .92f, center.y + radius * .28f)
+                    cubicTo(center.x - radius * .35f, center.y - radius * .08f - drift,
+                        center.x + radius * .40f, center.y + radius * .18f + drift,
+                        center.x + radius * 1.08f, center.y + radius * .42f)
+                    cubicTo(center.x + radius * .48f, center.y + radius * 1.05f,
+                        center.x - radius * .48f, center.y + radius * .92f,
+                        center.x - radius * .92f, center.y + radius * .28f)
+                    close()
+                }
+                val coreFlow = Path().apply {
+                    moveTo(center.x - radius * .42f, center.y - radius * .78f)
+                    cubicTo(center.x + radius * .18f, center.y - radius * .98f,
+                        center.x + radius * .86f, center.y - radius * .35f,
+                        center.x + radius * .40f, center.y + radius * .16f)
+                    cubicTo(center.x + radius * .08f, center.y + radius * .52f,
+                        center.x - radius * .56f, center.y + radius * .18f,
+                        center.x - radius * .42f, center.y - radius * .78f)
+                    close()
+                }
+                drawPath(upperFlow, Brush.linearGradient(
+                    listOf(Color(0xFF45E9FF), Color(0xFF9A55FF), Color(0xFF372064)),
+                    Offset(center.x - radius, center.y - radius), Offset(center.x + radius, center.y + radius)
+                ), alpha = .88f)
+                drawPath(lowerFlow, Brush.linearGradient(
+                    listOf(Color(0xFF281044), Color(0xFF8A42E8), Color(0xFF4BE7FF)),
+                    Offset(center.x - radius, center.y + radius), Offset(center.x + radius, center.y - radius)
+                ), alpha = .92f)
+                drawPath(coreFlow, Brush.radialGradient(
+                    listOf(Color(0xFFFFF4FF), Color(0xFFB8A0FF), Color(0xFF6B38CF), Color.Transparent),
+                    Offset(center.x + radius * .05f, center.y - radius * .18f), radius * .95f
+                ), alpha = .86f)
+            }
+            drawCircle(
+                Brush.radialGradient(
+                    listOf(Color(0x66FFFFFF), Color(0x22FFFFFF), Color.Transparent),
+                    Offset(center.x - radius * .34f, center.y - radius * .43f), radius * .56f
+                ), radius * .56f, Offset(center.x - radius * .34f, center.y - radius * .43f)
+            )
         }
     }
 }
-
 
 @Composable
 private fun GooeyThinkingDots(modifier: Modifier = Modifier) {
@@ -317,7 +386,6 @@ private fun ChatPage(
 ) {
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         Heading("Conversation", "A clear space for ideas and answers")
-        if (voiceStatus.isNotBlank()) Text(voiceStatus, Modifier.fillMaxWidth().padding(bottom = 8.dp), color = Cyan, fontSize = 11.sp)
         if (messages.isEmpty()) {
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -330,17 +398,14 @@ private fun ChatPage(
             contentPadding = PaddingValues(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             items(messages) { (text, fromUser) ->
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = if (fromUser) Arrangement.End else Arrangement.Start, verticalAlignment = Alignment.CenterVertically) {
-                    if (!fromUser && (text == "Thinking…" || text == "Speaking…")) {
-                        EnergyOrb(Modifier.size(58.dp), active = true)
-                        Column(Modifier.padding(start = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text(if (text == "Thinking…") "XYAA is thinking" else "XYAA is speaking",
-                                color = Cyan, fontSize = 12.sp)
-                            if (text == "Thinking…") GooeyThinkingDots(Modifier.size(width = 42.dp, height = 24.dp))
-                        }
+                    if (!fromUser && text.isBlank()) {
+                        // Quiet visual activity only: no "thinking", "speaking", or background status text.
+                        EnergyOrb(Modifier.size(52.dp), active = true)
+                        GooeyThinkingDots(Modifier.padding(start = 8.dp).size(width = 42.dp, height = 24.dp))
                     } else {
                         Surface(color = if (fromUser) Color(0xFF39245D) else Panel,
                             shape = RoundedCornerShape(18.dp), modifier = Modifier.widthIn(max = 330.dp).border(1.dp, Line, RoundedCornerShape(18.dp))) {
-                            Text(text, Modifier.padding(14.dp), color = White, fontSize = 13.sp, lineHeight = 20.sp)
+                            Text(text + if (busy && !fromUser) "  ▍" else "", Modifier.padding(14.dp), color = White, fontSize = 13.sp, lineHeight = 20.sp)
                         }
                     }
                 }
