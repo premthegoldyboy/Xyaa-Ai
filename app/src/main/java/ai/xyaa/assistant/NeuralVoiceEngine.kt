@@ -24,7 +24,7 @@ class NeuralVoiceEngine(private val context: Context, private val onStatus: (Str
     companion object {
         private const val MODEL_URL = "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-multi-lang-v1_0.tar.bz2"
         private const val MODEL_DIR = "kokoro-multi-lang-v1_0"
-        private const val VOICE_ID = 9 // Kokoro af_sky: brighter, lighter voice
+        private const val VOICE_ID = 10 // Kokoro multi-lang v1.0: af_sky
     }
     private val modelRoot = File(context.filesDir, "neural-voice")
     private val modelDir = File(modelRoot, MODEL_DIR)
@@ -32,6 +32,7 @@ class NeuralVoiceEngine(private val context: Context, private val onStatus: (Str
     private val playbackExecutor = Executors.newSingleThreadExecutor() // Play while the next chunk is synthesized
     private val downloading = AtomicBoolean(false)
     @Volatile private var engine: OfflineTts? = null
+    @Volatile private var audioTrack: AudioTrack? = null
     @Volatile private var closed = false
 
     fun initializeIfInstalled() {
@@ -100,7 +101,13 @@ class NeuralVoiceEngine(private val context: Context, private val onStatus: (Str
                 val spoken = text.replace(Regex("(?i)\\bX\\s*Y\\s*A\\s*A\\b"), "Zyaa")
                     .replace(Regex("(?i)\\bXYAA\\b"), "Zyaa")
                 val audio = active.generate(spoken, sid = VOICE_ID, speed = 1.08f)
-                playbackExecutor.execute { play(audio.samples, audio.sampleRate) }
+                playbackExecutor.execute {
+                    runCatching { play(audio.samples, audio.sampleRate) }
+                        .onFailure {
+                            onStatus("Neural audio output failed; switching to device voice.")
+                            if (!closed) fallback()
+                        }
+                }
             }.onFailure {
                 onStatus("Neural voice playback failed; switching to device voice for this reply.")
                 if (!closed) fallback()
@@ -129,23 +136,40 @@ class NeuralVoiceEngine(private val context: Context, private val onStatus: (Str
 
     private fun play(samples: FloatArray, sampleRate: Int) {
         if (samples.isEmpty() || closed) return
-        val minBuffer = AudioTrack.getMinBufferSize(sampleRate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_FLOAT).coerceAtLeast(4096)
-        val track = AudioTrack.Builder()
-            .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
-            .setAudioFormat(AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_FLOAT).setSampleRate(sampleRate).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
-            .setBufferSizeInBytes(minBuffer).setTransferMode(AudioTrack.MODE_STREAM).build()
-        try {
-            val playbackStarted = SystemClock.elapsedRealtime()
+        // Keep one AudioTrack alive across all synthesized phrases. Recreating it for
+        // every phrase adds audible startup gaps even when the next phrase is ready.
+        var track = audioTrack
+        if (track == null || track.state != AudioTrack.STATE_INITIALIZED) {
+            val minBuffer = AudioTrack.getMinBufferSize(
+                sampleRate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_FLOAT
+            ).coerceAtLeast(4096)
+            track = AudioTrack.Builder()
+                .setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .build()
+                )
+                .setAudioFormat(
+                    AudioFormat.Builder()
+                        .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
+                        .setSampleRate(sampleRate)
+                        .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                        .build()
+                )
+                .setBufferSizeInBytes(maxOf(minBuffer * 4, 32768))
+                .setTransferMode(AudioTrack.MODE_STREAM)
+                .build()
+            check(track.state == AudioTrack.STATE_INITIALIZED) { "Could not initialize audio output" }
+            audioTrack = track
             track.play()
-            var offset = 0
-            while (offset < samples.size && !closed) {
-                val written = track.write(samples, offset, samples.size - offset, AudioTrack.WRITE_BLOCKING)
-                if (written <= 0) break
-                offset += written
-            }
-            val remainingMs = (samples.size * 1000L / sampleRate - (SystemClock.elapsedRealtime() - playbackStarted)).coerceAtLeast(0L)
-            if (!closed && remainingMs > 0) Thread.sleep(minOf(remainingMs, 30000L))
-        } finally { runCatching { track.stop() }; track.release() }
+        }
+        var offset = 0
+        while (offset < samples.size && !closed) {
+            val written = track.write(samples, offset, samples.size - offset, AudioTrack.WRITE_BLOCKING)
+            check(written > 0) { "Audio output stopped unexpectedly" }
+            offset += written
+        }
     }
 
     private fun hasModelFiles() = File(modelDir, "model.onnx").isFile && File(modelDir, "voices.bin").isFile &&
@@ -189,6 +213,7 @@ class NeuralVoiceEngine(private val context: Context, private val onStatus: (Str
 
     fun close() {
         closed = true; executor.shutdownNow(); playbackExecutor.shutdownNow()
+        runCatching { audioTrack?.pause(); audioTrack?.flush(); audioTrack?.stop(); audioTrack?.release() }; audioTrack = null
         runCatching { engine?.release() }; engine = null
     }
 }
