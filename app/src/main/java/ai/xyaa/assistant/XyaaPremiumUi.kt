@@ -50,6 +50,7 @@ private val Line = Color(0xFF34294F)
 internal fun XyaaPremiumApp(
     onSend: (String, (String, Boolean) -> Unit) -> Unit,
     onVoice: () -> Unit,
+    voiceInputStatus: String,
     onSaveKey: (String) -> Unit,
     onLoadKey: () -> String?,
     onSaveProviderKeys: (String, String, String) -> Unit,
@@ -132,11 +133,11 @@ internal fun XyaaPremiumApp(
             Box(Modifier.fillMaxSize().padding(padding)) {
                 when (tab) {
                     "Orb" -> HomePage(liveVoiceActive, liveVoiceStatus, wakeWordEnabled,
-                        { tab = "Live Voice"; onStartLiveVoice() }, onStopLiveVoice, onStartWakeWord, onStopWakeWord, onVoice,
+                        { tab = "Live Voice"; onStartLiveVoice() }, onStopLiveVoice, onStartWakeWord, onStopWakeWord, { tab = "Chat"; onVoice() },
                         { submit(it) }, { tab = "Research" }, { tab = "Chat" })
                     "Live Voice" -> LiveVoicePage(liveVoiceActive, liveVoiceStatus, liveTranscript,
-                        onStartLiveVoice, onStopLiveVoice, onVoice)
-                    "Chat" -> ChatPage(messages, input, { input = it }, busy, { submit(it) }, onVoice)
+                        onStartLiveVoice, onStopLiveVoice, { tab = "Chat"; onVoice() })
+                    "Chat" -> ChatPage(messages, input, { input = it }, busy, { submit(it) }, onVoice, voiceInputStatus)
                     "Research" -> ResearchPage(researchQuery, { researchQuery = it }, busy,
                         { q -> researchQuery = q; tab = "Research"; submit("Research $q") }, messages, onShareReport)
                     "Skills" -> SkillsPage { command ->
@@ -312,10 +313,11 @@ private fun LiveVoicePage(
 @Composable
 private fun ChatPage(
     messages: List<Pair<String, Boolean>>, input: String, onInput: (String) -> Unit,
-    busy: Boolean, send: (String) -> Unit, voice: () -> Unit
+    busy: Boolean, send: (String) -> Unit, voice: () -> Unit, voiceStatus: String
 ) {
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         Heading("Conversation", "A clear space for ideas and answers")
+        if (voiceStatus.isNotBlank()) Text(voiceStatus, Modifier.fillMaxWidth().padding(bottom = 8.dp), color = Cyan, fontSize = 11.sp)
         if (messages.isEmpty()) {
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
