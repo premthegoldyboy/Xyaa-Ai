@@ -1,5 +1,10 @@
 package ai.xyaa.assistant
 
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -204,18 +209,29 @@ private fun HomePage(
 
 @Composable
 private fun EnergyOrb(modifier: Modifier = Modifier, active: Boolean = false) {
+    val motion = rememberInfiniteTransition(label = "xyaa-orb-motion")
+    val rotation by motion.animateFloat(0f, 360f, infiniteRepeatable(tween(if (active) 2600 else 6200), RepeatMode.Restart), label = "orb-rotation")
+    val pulse by motion.animateFloat(.94f, 1.06f, infiniteRepeatable(tween(if (active) 900 else 1800), RepeatMode.Reverse), label = "orb-pulse")
+    val morph by motion.animateFloat(-.12f, .12f, infiniteRepeatable(tween(2300), RepeatMode.Reverse), label = "orb-morph")
     Canvas(modifier) {
         val c = Offset(size.width / 2, size.height / 2)
-        val r = size.minDimension * .285f
-        drawCircle(Brush.radialGradient(listOf(Cyan.copy(alpha = .24f), Violet.copy(alpha = .16f), Color.Transparent), c, r * 2.1f), r * 2.1f, c)
-        drawCircle(Brush.radialGradient(listOf(Color(0xFFF7F0FF), Cyan.copy(alpha = .9f), Violet, Color(0xFF28134D), Bg), Offset(c.x-r*.25f,c.y-r*.28f), r*1.45f), r, c)
-        drawCircle(Color.White.copy(alpha = .6f), r*.05f, Offset(c.x-r*.27f,c.y-r*.3f))
+        val r = size.minDimension * .285f * pulse
+        drawCircle(Brush.radialGradient(listOf(Cyan.copy(alpha = .30f), Violet.copy(alpha = .22f), Color.Transparent), c, r * 2.25f), r * 2.25f, c)
+        drawCircle(Brush.radialGradient(listOf(Color(0xFFF7F0FF), Cyan.copy(alpha = .92f), Violet, Color(0xFF28134D), Bg), Offset(c.x-r*.25f,c.y-r*.28f), r*1.45f), r, c)
+        rotate(rotation, c) {
+            drawCircle(Brush.radialGradient(listOf(Cyan.copy(alpha = .85f), Violet.copy(alpha = .05f))), r*.34f, Offset(c.x+r*.57f,c.y+r*(morph+.12f)))
+            drawCircle(Brush.radialGradient(listOf(Violet.copy(alpha = .9f), Cyan.copy(alpha = .04f))), r*.30f, Offset(c.x-r*.48f,c.y-r*(morph+.18f)))
+            drawCircle(Brush.radialGradient(listOf(Color.White.copy(alpha = .75f), Cyan.copy(alpha = .02f))), r*.19f, Offset(c.x+r*.10f,c.y-r*.62f))
+        }
+        drawCircle(Color.White.copy(alpha = .62f), r*.05f, Offset(c.x-r*.27f,c.y-r*.3f))
         drawCircle(Cyan.copy(alpha = .6f), r*1.34f, c, style = Stroke(1.dp.toPx()))
         drawCircle(Violet.copy(alpha = .7f), r*1.58f, c, style = Stroke(1.dp.toPx()))
-        drawArc(Brush.sweepGradient(listOf(Color.Transparent,Cyan,Violet,Color.Transparent)),
-            if (active) 20f else 205f, 245f, false, Offset(c.x-r*1.72f,c.y-r*1.72f),
-            androidx.compose.ui.geometry.Size(r*3.44f,r*3.44f), style = Stroke(2.dp.toPx(), cap = StrokeCap.Round))
-        drawCircle(Cyan, 3.dp.toPx(), Offset(c.x + r*1.58f, c.y))
+        rotate(rotation, c) {
+            drawArc(Brush.sweepGradient(listOf(Color.Transparent,Cyan,Violet,Color.Transparent)), 20f, 245f, false,
+                Offset(c.x-r*1.72f,c.y-r*1.72f), androidx.compose.ui.geometry.Size(r*3.44f,r*3.44f),
+                style = Stroke(2.dp.toPx(), cap = StrokeCap.Round))
+            drawCircle(Cyan, 3.dp.toPx(), Offset(c.x+r*1.58f,c.y))
+        }
     }
 }
 
@@ -278,10 +294,15 @@ private fun ChatPage(
         } else LazyColumn(Modifier.weight(1f).fillMaxWidth(),
             contentPadding = PaddingValues(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             items(messages) { (text, fromUser) ->
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = if (fromUser) Arrangement.End else Arrangement.Start) {
-                    Surface(color = if (fromUser) Color(0xFF39245D) else Panel,
-                        shape = RoundedCornerShape(18.dp), modifier = Modifier.widthIn(max = 330.dp).border(1.dp, Line, RoundedCornerShape(18.dp))) {
-                        Text(text, Modifier.padding(14.dp), color = White, fontSize = 13.sp, lineHeight = 20.sp)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = if (fromUser) Arrangement.End else Arrangement.Start, verticalAlignment = Alignment.CenterVertically) {
+                    if (!fromUser && text == "Thinking…") {
+                        EnergyOrb(Modifier.size(58.dp), active = true)
+                        Text("XYAA is thinking", Modifier.padding(start = 8.dp), color = Cyan, fontSize = 12.sp)
+                    } else {
+                        Surface(color = if (fromUser) Color(0xFF39245D) else Panel,
+                            shape = RoundedCornerShape(18.dp), modifier = Modifier.widthIn(max = 330.dp).border(1.dp, Line, RoundedCornerShape(18.dp))) {
+                            Text(text, Modifier.padding(14.dp), color = White, fontSize = 13.sp, lineHeight = 20.sp)
+                        }
                     }
                 }
             }
