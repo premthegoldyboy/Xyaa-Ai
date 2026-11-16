@@ -35,9 +35,11 @@ class SkillEngine(private val context: Context) {
                 unit.startsWith("hour") || unit.startsWith("hr") -> 60L
                 else -> 1L
             }
-            val delay = amount * multiplier
+            val delay = runCatching { Math.multiplyExact(amount, multiplier) }.getOrNull()
+                ?: return "That reminder time is too large."
             if (delay !in 1L..10080L) return "Choose a reminder between 1 minute and 7 days."
-            val detail = reminder.groupValues[3].trim()
+            val detail = reminder.groupValues[3].trim().take(500)
+            if (detail.isBlank()) return "What should I remind you about?"
             return runCatching {
                 BackgroundTaskScheduler(context).scheduleReminder(delay, detail)
                 "Done. I'll remind you in $amount $unit about: $detail"
