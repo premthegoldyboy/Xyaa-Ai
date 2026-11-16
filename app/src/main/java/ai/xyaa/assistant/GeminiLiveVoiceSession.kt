@@ -20,7 +20,9 @@ import org.json.JSONObject
 import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Full-duplex Gemini Live session. Mic PCM is sent while native 24 kHz response audio
@@ -51,6 +53,9 @@ class GeminiLiveVoiceSession(
     }
     private val ready = AtomicBoolean(false)
     private val audioStarted = AtomicBoolean(false)
+    private val playbackGeneration = AtomicInteger(0)
+    private val setupTimeout = Executors.newSingleThreadScheduledExecutor()
+    @Volatile private var setupTimeoutTask: ScheduledFuture<*>? = null
     @Volatile private var socket: WebSocket? = null
     @Volatile private var recorder: AudioRecord? = null
     @Volatile private var track: AudioTrack? = null
@@ -64,6 +69,13 @@ class GeminiLiveVoiceSession(
             return
         }
         onStatus("Connecting to Gemini Live…")
+        setupTimeoutTask = setupTimeout.schedule({
+            if (!ready.get() && !stopped.get()) {
+                onStatus("Gemini Live did not finish connecting. Check the API key, model access and connection, then retry.")
+                socket?.close(1001, "Live setup timeout")
+                finish()
+            }
+        }, 20, TimeUnit.SECONDS)
         val encodedKey = URLEncoder.encode(apiKey.trim(), "UTF-8")
         val request = Request.Builder()
             .url("wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=$encodedKey")
@@ -75,6 +87,8 @@ class GeminiLiveVoiceSession(
                         .put("model", MODEL)
                         .put("generationConfig", JSONObject()
                             .put("responseModalities", org.json.JSONArray().put("AUDIO"))
+                            .put("maxOutputTokens", 256)
+                            .put("thinkingConfig", JSONObject().put("thinkingBudget", 0))
                             .put("speechConfig", JSONObject().put("voiceConfig",
                                 JSONObject().put("prebuiltVoiceConfig", JSONObject().put("voiceName", "Kore")))))
                         .put("systemInstruction", JSONObject().put("parts",
@@ -82,7 +96,10 @@ class GeminiLiveVoiceSession(
                                 "You are XYAA, pronounced Zyaa, a friendly and concise Android voice assistant. Speak naturally and clearly. Be honest about actions and capabilities."))))
                         .put("inputAudioTranscription", JSONObject())
                         .put("outputAudioTranscription", JSONObject()))
-                webSocket.send(setup.toString())
+                if (!webSocket.send(setup.toString())) {
+                    onStatus("Gemini Live could not send its session setup. Please retry.")
+                    finish()
+                }
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
@@ -103,8 +120,14 @@ class GeminiLiveVoiceSession(
 
     private fun handleServerMessage(raw: String) {
         val root = runCatching { JSONObject(raw) }.getOrNull() ?: return
+        root.optJSONObject("error")?.let { error ->
+            onStatus("Gemini Live error: ${error.optString("message", "request rejected")}")
+            finish()
+            return
+        }
         if (root.has("setupComplete")) {
             if (ready.compareAndSet(false, true)) {
+                setupTimeoutTask?.cancel(false)
                 onStatus("Live voice connected · listening")
                 startMicrophone()
             }
@@ -112,6 +135,8 @@ class GeminiLiveVoiceSession(
         }
         val serverContent = root.optJSONObject("serverContent") ?: return
         if (serverContent.optBoolean("interrupted", false)) {
+            // Discard queued audio from the interrupted turn so old speech cannot play later.
+            playbackGeneration.incrementAndGet()
             runCatching { track?.pause(); track?.flush(); track?.play() }
         }
         serverContent.optJSONObject("inputTranscription")?.optString("text")?.takeIf { it.isNotBlank() }?.let {
@@ -141,13 +166,19 @@ class GeminiLiveVoiceSession(
             stop()
             return
         }
-        val input = AudioRecord(
-            MediaRecorder.AudioSource.VOICE_RECOGNITION,
-            INPUT_RATE,
-            AudioFormat.CHANNEL_IN_MONO,
-            AudioFormat.ENCODING_PCM_16BIT,
-            maxOf(minBytes * 2, INPUT_RATE * 2)
-        )
+        val input = try {
+            AudioRecord(
+                MediaRecorder.AudioSource.VOICE_RECOGNITION,
+                INPUT_RATE,
+                AudioFormat.CHANNEL_IN_MONO,
+                AudioFormat.ENCODING_PCM_16BIT,
+                maxOf(minBytes * 2, INPUT_RATE * 2)
+            )
+        } catch (error: Throwable) {
+            onStatus("Microphone could not be initialized: ${error.message ?: "device audio error"}")
+            stop()
+            return
+        }
         if (input.state != AudioRecord.STATE_INITIALIZED) {
             input.release()
             onStatus("Microphone could not be started.")
@@ -155,7 +186,14 @@ class GeminiLiveVoiceSession(
             return
         }
         recorder = input
-        input.startRecording()
+        try {
+            input.startRecording()
+        } catch (error: Throwable) {
+            onStatus("Microphone could not start recording: ${error.message ?: "permission or device error"}")
+            stop()
+            return
+        }
+        onStatus("Listening · speak naturally")
         micThread = Thread {
             Process.setThreadPriority(Process.THREAD_PRIORITY_AUDIO)
             val buffer = ShortArray(1600) // 100 ms of mono 16 kHz PCM
@@ -184,12 +222,15 @@ class GeminiLiveVoiceSession(
 
     private fun playPcm(bytes: ByteArray) {
         if (stopped.get() || bytes.isEmpty()) return
-        playbackExecutor.execute { writePcm(bytes) }
+        val generation = playbackGeneration.get()
+        playbackExecutor.execute {
+            if (!stopped.get() && generation == playbackGeneration.get()) writePcm(bytes, generation)
+        }
     }
 
     @Synchronized
-    private fun writePcm(bytes: ByteArray) {
-        if (stopped.get() || bytes.isEmpty()) return
+    private fun writePcm(bytes: ByteArray, generation: Int) {
+        if (stopped.get() || generation != playbackGeneration.get() || bytes.isEmpty()) return
         var output = track
         if (output == null || output.state != AudioTrack.STATE_INITIALIZED) {
             val minBytes = AudioTrack.getMinBufferSize(OUTPUT_RATE, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT)
@@ -214,7 +255,7 @@ class GeminiLiveVoiceSession(
         }
         if (output.playState != AudioTrack.PLAYSTATE_PLAYING) output.play()
         var offset = 0
-        while (offset < bytes.size && !stopped.get()) {
+        while (offset < bytes.size && !stopped.get() && generation == playbackGeneration.get()) {
             val written = output.write(bytes, offset, bytes.size - offset, AudioTrack.WRITE_BLOCKING)
             if (written <= 0) break
             offset += written
@@ -223,6 +264,8 @@ class GeminiLiveVoiceSession(
 
     fun stop() {
         if (!stopped.compareAndSet(false, true)) return
+        playbackGeneration.incrementAndGet()
+        setupTimeoutTask?.cancel(false)
         runCatching { recorder?.stop() }
         runCatching { recorder?.release() }
         recorder = null
@@ -231,6 +274,7 @@ class GeminiLiveVoiceSession(
         socket?.close(1000, "User ended live voice")
         socket = null
         playbackExecutor.shutdownNow()
+        setupTimeout.shutdownNow()
         finish()
     }
 
@@ -238,6 +282,9 @@ class GeminiLiveVoiceSession(
     private fun finish() {
         if (!finished.compareAndSet(false, true)) return
         stopped.set(true)
+        setupTimeoutTask?.cancel(false)
+        setupTimeout.shutdownNow()
+        playbackGeneration.incrementAndGet()
         runCatching { recorder?.stop(); recorder?.release() }
         recorder = null
         runCatching { track?.pause(); track?.flush(); track?.stop(); track?.release() }
