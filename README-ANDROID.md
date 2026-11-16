@@ -19,3 +19,18 @@ Native Kotlin + Jetpack Compose assistant.
 - Notes remain in app-local preferences.
 - The Gemini key is encrypted at rest with Android Keystore. Prompts are sent to Google's Gemini API when AI fallback is used.
 - This is an early foundation. Test each device action on the target phone; Android vendors may handle intents differently.
+
+
+## Seven-upgrade engineering track
+
+The seven upgrades are being developed as a coordinated roadmap. Current branch foundations:
+
+- **Conversation memory:** bounded, on-device recent-turn storage (24 turns; 1,800 characters per turn) with an explicit clear API. API keys are not stored in this memory store.
+- **Agent coordination:** deterministic specialist router interface. Specialists must be injected by app code; it does not claim independent agents or external execution.
+- **Voice performance:** timing counters for first-audio readiness and accumulated inter-chunk playback gaps. Device profiling is still required.
+- **Wake word:** not yet enabled. A production implementation must use an explicit opt-in, visible microphone foreground service, and a tested on-device wake-word model.
+- **Android integrations:** existing intent-based skills remain the supported integration surface; broader integrations need per-feature permissions and user confirmation.
+- **Background tasks:** not yet enabled. Scheduling must use Android-supported background APIs and visible notifications, with user-controlled cancellation.
+- **Real-time voice:** current speech-recognition intent + streamed text-to-speech is not full-duplex audio. A true live session needs a streaming audio transport and lifecycle handling.
+
+These items are intentionally marked by implementation status rather than presented as completed capabilities. Build and device validation are required before release.
