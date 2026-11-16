@@ -26,6 +26,32 @@ class SkillEngine(private val context: Context) {
             return "Today is " + SimpleDateFormat("EEEE, d MMMM yyyy", Locale.getDefault()).format(Date()) + "."
         }
 
+        val reminder = Regex(
+            "^remind me (?:in (\\d+)\\s*(minutes?|mins?|hours?|hrs?|days?) to (.+)|to (.+) in (\\d+)\\s*(minutes?|mins?|hours?|hrs?|days?))$",
+            RegexOption.IGNORE_CASE
+        ).find(text)
+        if (reminder != null) {
+            val amountText = reminder.groupValues[1].ifBlank { reminder.groupValues[5] }
+            val unit = reminder.groupValues[2].ifBlank { reminder.groupValues[6] }.lowercase(Locale.ROOT)
+            val detail = reminder.groupValues[3].ifBlank { reminder.groupValues[4] }.trim().take(500)
+            val amount = amountText.toLongOrNull() ?: return "That reminder time is too large."
+            val multiplier = when {
+                unit.startsWith("day") -> 1440L
+                unit.startsWith("hour") || unit.startsWith("hr") -> 60L
+                else -> 1L
+            }
+            val delay = runCatching { Math.multiplyExact(amount, multiplier) }.getOrNull()
+                ?: return "That reminder time is too large."
+            if (delay !in 1L..10080L) return "Choose a reminder between 1 minute and 7 days."
+            if (detail.isBlank()) return "What should I remind you about?"
+            return runCatching {
+                BackgroundTaskScheduler(context).scheduleReminder(delay, detail)
+                val notificationNote = if (BackgroundTaskScheduler(context).notificationsEnabled()) "" else
+                    " Notifications are currently disabled for XYAA, so enable them in Android Settings to receive it."
+                "Reminder scheduled for $amount $unit from now: $detail.$notificationNote"
+            }.getOrElse { "I couldn't schedule that reminder: ${it.message ?: "unknown error"}" }
+        }
+
         val note = Regex("^(?:remember|save|take) (?:a )?note(?: that)?[: ]+(.+)$", RegexOption.IGNORE_CASE).find(text)
         if (note != null) {
             val old = prefs.getString("notes", "").orEmpty()
