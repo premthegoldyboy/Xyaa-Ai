@@ -82,7 +82,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         skills = SkillEngine(this)
         managementAgent = ManagementAgent(this)
         conversationMemory = ConversationMemory(this)
-        recentMemory.value = conversationMemory.recentTurns().map { "${it.role}: ${it.text}" }
+        recentMemory.value = conversationMemory.recentTurns().map { "${if (it.role == "user") "You" else "XYAA"}: ${it.text}" }
         neuralVoice = NeuralVoiceEngine(this) { status -> runOnUiThread { neuralVoiceStatus.value = status } }
         neuralVoice.initializeIfInstalled()
         tts = TextToSpeech(this, this)
@@ -345,8 +345,20 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     }
 
     private fun rememberTurn(role: String, text: String) {
-        conversationMemory.remember(role, text)
-        recentMemory.value = conversationMemory.recentTurns().map { "${it.role}: ${it.text}" }
+        conversationMemory.remember(role, if (role == "assistant") cleanAssistantMemoryText(text) else text)
+        recentMemory.value = conversationMemory.recentTurns().map { "${if (it.role == "user") "You" else "XYAA"}: ${it.text}" }
+    }
+
+
+    /** Removes provider-only labels and Markdown decoration before saving user-visible memory. */
+    private fun cleanAssistantMemoryText(raw: String): String {
+        return raw
+            .replace(Regex("(?i)\\*{0,2}SPOKEN:\\*{0,2}\\s*"), "")
+            .replace(Regex("(?m)^\\s*---+\\s*$"), "")
+            .replace(Regex("(?m)^\\s{0,3}#{1,6}\\s*"), "")
+            .replace(Regex("\\*{1,3}([^*\\n]+)\\*{1,3}"), "$1")
+            .replace(Regex("\\n{3,}"), "\\n\\n")
+            .trim()
     }
 
     private fun launchPdfFolderPicker() {
