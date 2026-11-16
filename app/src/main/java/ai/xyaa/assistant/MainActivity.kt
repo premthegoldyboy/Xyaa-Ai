@@ -353,11 +353,11 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     /** Removes provider-only labels and Markdown decoration before saving user-visible memory. */
     private fun cleanAssistantMemoryText(raw: String): String {
         return raw
-            .replace(Regex("(?i)\\\\*{0,2}SPOKEN:\\\\*{0,2}\\\\s*"), "")
-            .replace(Regex("(?m)^\\\\s*---+\\\\s*$"), "")
-            .replace(Regex("(?m)^\\\\s{0,3}#{1,6}\\\\s*"), "")
-            .replace(Regex("\\\\*{1,3}([^*\\\\n]+)\\\\*{1,3}"), "$1")
-            .replace(Regex("\\\\n{3,}"), "\\\\n\\\\n")
+            .replace(Regex("(?i)\\*{0,2}SPOKEN:\\*{0,2}\\s*"), "")
+            .replace(Regex("(?m)^\\s*---+\\s*$"), "")
+            .replace(Regex("(?m)^\\s{0,3}#{1,6}\\s*"), "")
+            .replace(Regex("\\*{1,3}([^*\\n]+)\\*{1,3}"), "$1")
+            .replace(Regex("\\n{3,}"), "\\n\\n")
             .trim()
     }
 
