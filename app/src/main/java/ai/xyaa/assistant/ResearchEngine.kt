@@ -153,9 +153,43 @@ Then provide Markdown sections: title, TL;DR, key findings, details, caveats.
 
 $context"""
         val fallback = ProviderFallbackClient(groqKey, deepSeekKey)
-        val report = fallback.complete(prompt) { onStatus("Writing report with $it…") }
+        val report = if (!geminiKey.isNullOrBlank()) {
+            runCatching { writeWithGemini(prompt) }.getOrElse {
+                fallback.complete(prompt) { onStatus("Writing report with $it…") }
+            }
+        } else {
+            fallback.complete(prompt) { onStatus("Writing report with $it…") }
+        }
         val split = splitSpoken(report)
-        return Report(topic, split.first, split.second, sources, "Tavily + backup AI")
+        return Report(topic, split.first, split.second, sources, "Tavily + AI")
+    }
+
+    private fun writeWithGemini(prompt: String): String {
+        val connection = (URL("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent")
+            .openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            connectTimeout = 7000
+            readTimeout = 35000
+            doOutput = true
+            setRequestProperty("Content-Type", "application/json")
+            setRequestProperty("x-goog-api-key", geminiKey!!.trim())
+        }
+        try {
+            val body = JSONObject()
+                .put("contents", JSONArray().put(JSONObject().put("role", "user")
+                    .put("parts", JSONArray().put(JSONObject().put("text", prompt)))))
+            connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+            val status = connection.responseCode
+            if (status !in 200..299) throw IllegalStateException("Gemini report writer HTTP $status")
+            val json = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
+            val parts = json.optJSONArray("candidates")?.optJSONObject(0)
+                ?.optJSONObject("content")?.optJSONArray("parts") ?: JSONArray()
+            return (0 until parts.length()).mapNotNull { parts.optJSONObject(it)?.optString("text") }
+                .filter { it.isNotBlank() }.joinToString("\n")
+                .ifBlank { throw IllegalStateException("Gemini returned an empty report.") }
+        } finally {
+            connection.disconnect()
+        }
     }
 
     private fun splitSpoken(raw: String): Pair<String, String> {
