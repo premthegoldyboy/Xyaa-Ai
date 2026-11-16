@@ -85,6 +85,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 neuralVoiceStatus = neuralVoiceStatus.value,
                 onDownloadNeuralVoice = { neuralVoice.downloadAndInitialize() },
                 onClearMemory = { conversationMemory.clear(); recentMemory.value = emptyList() },
+                onShareReport = ::shareResearchReport,
                 recentMemory = recentMemory.value,
                 liveVoiceActive = liveVoiceActive.value,
                 liveVoiceStatus = liveVoiceStatus.value,
@@ -227,6 +228,15 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         }
     }
 
+    private fun shareResearchReport(report: String) {
+        val sendIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_SUBJECT, "XYAA Research Report")
+            putExtra(Intent.EXTRA_TEXT, report)
+        }
+        runCatching { startActivity(Intent.createChooser(sendIntent, "Share research report")) }
+    }
+
     private fun rememberTurn(role: String, text: String) {
         conversationMemory.remember(role, text)
         recentMemory.value = conversationMemory.recentTurns().map { "${it.role}: ${it.text}" }
@@ -300,7 +310,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                     say(result.spoken.ifBlank { "Research report completed." })
                 }.onFailure { error ->
                     val message = "Research failed: ${error.message.orEmpty().take(180)}"
-                    conversationMemory.remember("assistant", message)
+                    rememberTurn("assistant", message)
                     runOnUiThread { answer(message, true) }
                     say(message)
                 }
