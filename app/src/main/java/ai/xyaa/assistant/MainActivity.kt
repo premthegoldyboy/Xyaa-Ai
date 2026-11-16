@@ -244,6 +244,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
 
     private fun process(prompt: String, answer: (String, Boolean) -> Unit) {
         rememberTurn("user", prompt)
+        if (LinkAgent.matches(prompt)) { val result = LinkAgent.generate(prompt); rememberTurn("assistant", result); answer(result, true); say("Links prepared."); return }
         val local = skills.execute(prompt)
         if (local != null) {
             rememberTurn("assistant", local)
@@ -265,36 +266,8 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         }
         answer("Connecting to Gemini…", false)
         Thread {
-            val speechBuffer = StringBuilder()
-            var lastStreamLength = 0
-            var hasSpokenStream = false
-            var firstSpeechChunk = true
-
-            fun speakStreamChunk(chunk: String) {
-                val clean = chunk.trim()
-                if (clean.isBlank()) return
-                hasSpokenStream = true
-                val queueMode = if (firstSpeechChunk) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
-                firstSpeechChunk = false
-                val spoken = clean
-                    .replace(Regex("(?i)\\bX\\s*Y\\s*A\\s*A\\b"), "Zyaa")
-                    .replace(Regex("(?i)\\bXYAA\\b"), "Zyaa")
-                // Prefer Kokoro for streamed Gemini sentences; retain Android TTS as fallback.
-                val neuralQueued = neuralVoice.speak(spoken) {
-                    runOnUiThread {
-                        tts?.speak(spoken, queueMode, null, "xyaa-stream-fallback-" + System.nanoTime())
-                    }
-                }
-                if (!neuralQueued) {
-                    runOnUiThread {
-                        tts?.speak(spoken, queueMode, null, "xyaa-stream-" + System.nanoTime())
-                    }
-                }
-            }
-
             val memoryContext = conversationMemory.contextForPrompt()
-            val contextualPrompt = if (memoryContext.isBlank()) prompt else
-                "Relevant recent conversation context (use only when helpful):\\n$memoryContext\\n\\nCurrent request: $prompt"
+            val contextualPrompt = "You are XYAA, a helpful, precise personal AI. Answer directly, structure complex answers with headings and steps, explain uncertainty, and never invent sources or claim actions you did not perform.\\n\\n" + (if (memoryContext.isBlank()) "" else "Recent context:\\n$memoryContext\\n\\n") + "Current request: $prompt"
 
             if (isResearchRequest(prompt)) {
                 val topic = extractResearchTopic(prompt)
@@ -324,35 +297,6 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                     contextualPrompt,
                     onStatus = { status -> runOnUiThread { answer(status, false) } },
                     onText = { partial ->
-                        if (partial.isEmpty()) {
-                            speechBuffer.clear()
-                            lastStreamLength = 0
-                        } else if (partial.length >= lastStreamLength) {
-                            val delta = partial.substring(lastStreamLength)
-                            lastStreamLength = partial.length
-                            speechBuffer.append(delta)
-                            // Start speech as soon as five complete words are available.
-                            // Then stream in ten-word phrases; punctuation is used immediately
-                            // when it forms a natural boundary, without waiting for the SSE turn to end.
-                            while (true) {
-                                val current = speechBuffer.toString()
-                                val boundary = Regex("[,;.!?](?:[\\s\\n]+|$)").find(current)
-                                if (boundary != null) {
-                                    val phrase = current.substring(0, boundary.range.first + 1).trim()
-                                    val words = phrase.split(Regex("\\s+")).size
-                                    if (phrase.isNotBlank() && (boundary.value.first() != ',' || words >= 4)) {
-                                        speakStreamChunk(phrase)
-                                        speechBuffer.delete(0, boundary.range.last + 1)
-                                        continue
-                                    }
-                                }
-                                val threshold = if (firstSpeechChunk) 5 else 10
-                                val readyPhrase = Regex("^(?:\\S+\\s+){${threshold - 1}}\\S+\\s").find(current) ?: break
-                                val cut = readyPhrase.range.last + 1
-                                speakStreamChunk(current.substring(0, cut))
-                                speechBuffer.delete(0, cut)
-                            }
-                        }
                         runOnUiThread { answer(partial, false) }
                     }
                 )
@@ -364,13 +308,10 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 }
             }.getOrElse { formatAiError(it) }
 
-            if (speechBuffer.isNotBlank()) speakStreamChunk(speechBuffer.toString())
             rememberTurn("assistant", response)
             runOnUiThread {
                 answer(response, true)
-                // If streaming produced no speakable text (for example, an API error), use
-                // the normal voice path. Otherwise the streamed sentences are already queued.
-                if (!hasSpokenStream) say(response)
+                window.decorView.postDelayed({ say(response) }, 180)
             }
         }.start()
     }
