@@ -48,7 +48,7 @@ class ManagementAgent(context: Context) {
         prefs.edit().putString(KEY_PDFS, records.toString()).apply()
     }
 
-    private fun handleNotes(text: String, lower: String): String {
+    private fun handleNotes(text: String, lower: String): String? {
         val notes = readNotes()
         val save = Regex("(?i)^(?:please\\s+)?(?:remember|save|add|create|take)\\s+(?:a\\s+)?note(?:\\s+(?:that|saying))?\\s*[:,-]?\\s*(.+)$").find(text)
         if (save != null) {
@@ -113,10 +113,10 @@ class ManagementAgent(context: Context) {
             prefs.edit().remove(KEY_NOTES).apply()
             return "All saved notes have been cleared."
         }
-        return "I can save, list, search, edit, and delete notes. Try “save a note: …” or “find in my notes …”."
+        return null
     }
 
-    private fun handlePdf(text: String, lower: String): String {
+    private fun handlePdf(text: String, lower: String): String? {
         val records = readPdfs()
         if (Regex("(?i)^(?:show|list|view)(?:\\s+all)?\\s+(?:my\\s+)?pdfs$|^(?:my\\s+pdfs|pdf library|show my documents)$").matches(text)) {
             if (records.length() == 0) return "Your XYAA PDF library is empty. PDFs you create and save through XYAA will appear here."
@@ -143,7 +143,7 @@ class ManagementAgent(context: Context) {
         val rename = Regex("(?i)^rename\\s+(?:the\\s+)?pdf\\s+(.+?)\\s+to\\s+(.+)$").find(text)
         if (rename != null) return renamePdf(rename.groupValues[1].trim(), rename.groupValues[2].trim(), records)
 
-        return "I can list, search, open, rename, and delete PDFs saved through XYAA. Try “list my PDFs”."
+        return null
     }
 
     private fun deletePdf(query: String, records: JSONArray): String {
@@ -204,6 +204,58 @@ class ManagementAgent(context: Context) {
     private fun isNoteIntent(lower: String): Boolean =
         Regex("\\b(note|notes)\\b").containsMatchIn(lower) &&
             Regex("\\b(save|remember|add|create|take|show|list|view|read|search|find|look|delete|remove|clear|edit|update|replace|manage|my)\\b").containsMatchIn(lower)
+
+    fun isManagementRequest(prompt: String): Boolean {
+        val lower = prompt.lowercase(Locale.ROOT)
+        val target = Regex("\\b(notes?|pdfs?|documents?)\\b").containsMatchIn(lower)
+        val action = Regex("\\b(save|remember|add|create|take|show|list|view|read|search|find|look|delete|remove|clear|edit|update|replace|rename|open|manage|organize|summari[sz]e)\\b")
+            .containsMatchIn(lower)
+        return target && action
+    }
+
+    fun plannerPrompt(userRequest: String): String = """
+        You are XYAA's file-and-notes management planner. Convert the user's request into exactly one JSON object.
+        User request: "$userRequest"
+        Allowed actions:
+        save_note {text}; list_notes {}; search_notes {query}; edit_note {number, text};
+        delete_note {number or query}; clear_notes {};
+        list_pdfs {}; search_pdfs {query}; open_pdf {query}; rename_pdf {query, new_name};
+        delete_pdf {query}; clarify {question}.
+        Never invent file names, note numbers, or contents. If the request is ambiguous, use clarify.
+        Do not execute anything. Output only JSON with keys action, text, query, number, new_name, question as needed.
+    """.trimIndent()
+
+    fun executePlan(rawPlan: String, originalRequest: String): String? {
+        val jsonText = rawPlan.substringAfter('{', "").let { "{" + it.substringBeforeLast('}', "") + "}" }
+        val plan = runCatching { JSONObject(jsonText) }.getOrNull() ?: return null
+        val action = plan.optString("action").lowercase(Locale.ROOT)
+        val query = plan.optString("query").trim()
+        val text = plan.optString("text").trim()
+        val number = plan.optInt("number", -1)
+        val original = originalRequest.lowercase(Locale.ROOT)
+        return when (action) {
+            "save_note" -> if (text.isNotBlank()) execute("save note: $text") else "What should I write in the note?"
+            "list_notes" -> execute("show my notes")
+            "search_notes" -> if (query.isNotBlank()) execute("search notes for $query") else "What should I search for?"
+            "edit_note" -> if (number > 0 && text.isNotBlank()) execute("edit note #$number to $text") else "Tell me which note number to edit and its replacement."
+            "delete_note" -> {
+                if (!Regex("\\b(delete|remove)\\b").containsMatchIn(original)) "I won't delete a note unless you explicitly ask me to."
+                else if (number > 0) execute("delete note #$number")
+                else if (query.isNotBlank()) execute("delete note about $query")
+                else "Which note should I delete?"
+            }
+            "clear_notes" -> if (Regex("\\b(clear|delete|remove)\\s+(all|every)\\b").containsMatchIn(original)) execute("clear my notes")
+                else "Please explicitly say “clear all my notes” before I remove every note."
+            "list_pdfs" -> execute("list my PDFs")
+            "search_pdfs" -> if (query.isNotBlank()) execute("search PDFs for $query") else "What should I search for?"
+            "open_pdf" -> if (query.isNotBlank()) execute("open PDF $query") else "Which PDF should I open?"
+            "rename_pdf" -> if (query.isNotBlank() && plan.optString("new_name").isNotBlank()) execute("rename PDF $query to ${plan.optString("new_name")}") else "Tell me the PDF and its new filename."
+            "delete_pdf" -> if (Regex("\\b(delete|remove)\\b").containsMatchIn(original) && query.isNotBlank()) execute("delete PDF $query")
+                else "I need an explicit delete request and an identifiable PDF filename."
+            "clarify" -> plan.optString("question").ifBlank { "Which note or PDF do you mean?" }
+            else -> null
+        }
+    }
 
     private fun queryName(uri: Uri): String? = runCatching {
         app.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
