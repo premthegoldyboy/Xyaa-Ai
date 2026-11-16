@@ -32,6 +32,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -45,6 +46,23 @@ private val Cyan = Color(0xFF42DFFF)
 private val White = Color(0xFFF5F3FF)
 private val Muted = Color(0xFFA9A2C2)
 private val Line = Color(0xFF34294F)
+
+/** Turns provider Markdown and internal speech labels into clean text for the app UI. */
+private fun cleanAssistantPresentation(raw: String): String {
+    return raw
+        .replace(Regex("(?i)\\*{0,2}SPOKEN:\\*{0,2}\\s*"), "")
+        .replace(Regex("(?im)^\\s*\\*{0,2}(?:internal|background|debug|tool)\\s*(?:status|note)?\\s*:\\*{0,2}.*$"), "")
+        .replace(Regex("(?m)^\\s*---+\\s*$"), "")
+        .replace(Regex("(?m)^\\s{0,3}#{1,6}\\s*"), "")
+        .replace(Regex("\\*{1,3}([^*\\n]+)\\*{1,3}"), "$1")
+        .replace(Regex("`([^`]+)`"), "$1")
+        .replace(Regex("(?m)^\\s*\\|?\\s*:?-{3,}:?\\s*(?:\\|\\s*:?-{3,}:?\\s*)+\\|?\\s*$"), "")
+        .replace(Regex("(?m)^\\s*\\|\\s*"), "")
+        .replace(Regex("\\s*\\|\\s*"), " · ")
+        .replace(Regex("(?m)^\\s*[-*+]\\s+"), "• ")
+        .replace(Regex("\\n{3,}"), "\\n\\n")
+        .trim()
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -405,7 +423,7 @@ private fun ChatPage(
                     } else {
                         Surface(color = if (fromUser) Color(0xFF39245D) else Panel,
                             shape = RoundedCornerShape(18.dp), modifier = Modifier.widthIn(max = 330.dp).border(1.dp, Line, RoundedCornerShape(18.dp))) {
-                            Text(text + if (busy && !fromUser) "  ▍" else "", Modifier.padding(14.dp), color = White, fontSize = 13.sp, lineHeight = 20.sp)
+                            Text(if (fromUser) text else cleanAssistantPresentation(text) + if (busy && !fromUser) "  ▍" else "", Modifier.padding(14.dp), color = White, fontSize = 13.sp, lineHeight = 20.sp)
                         }
                     }
                 }
@@ -440,7 +458,7 @@ private fun ResearchPage(
         if (report.isNullOrBlank()) InfoCard("No report yet", "Your completed report and returned sources will appear here.", "WAITING")
         else Surface(color = Panel, shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(15.dp)) {
-                Text(report, color = White, fontSize = 12.sp, lineHeight = 18.sp)
+                Text(cleanAssistantPresentation(report), color = White, fontSize = 12.sp, lineHeight = 18.sp)
                 Spacer(Modifier.height(12.dp))
                 OutlinedButton(onClick = { onShare(report) }, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Default.Share, null); Spacer(Modifier.width(8.dp)); Text("Share / export report")
@@ -512,7 +530,7 @@ private fun MemoryPage(memories: List<String>, query: String, onQuery: (String) 
         } else LazyColumn(Modifier.weight(1f),contentPadding=PaddingValues(vertical=10.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
             items(filtered.reversed()) { item ->
                 Surface(color=Panel,shape=RoundedCornerShape(15.dp),modifier=Modifier.fillMaxWidth()) {
-                    Text(item,Modifier.padding(13.dp),color=White,fontSize=12.sp,lineHeight=18.sp)
+                    Text(cleanAssistantPresentation(item),Modifier.padding(13.dp),color=White,fontSize=12.sp,lineHeight=18.sp,maxLines=8,overflow=TextOverflow.Ellipsis)
                 }
             }
         }
