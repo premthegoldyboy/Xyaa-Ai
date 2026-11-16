@@ -2,6 +2,8 @@ package ai.xyaa.assistant
 
 import android.app.Activity
 import android.content.Intent
+import android.content.BroadcastReceiver
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.provider.Settings
@@ -44,6 +46,20 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     private val liveVoiceStatus = mutableStateOf("Live voice is off")
     private val liveTranscript = mutableStateOf("")
     private val wakeWordEnabled = mutableStateOf(false)
+    private var wakeReceiverRegistered = false
+    private val wakeWordReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: android.content.Context?, intent: Intent?) {
+            when (intent?.action) {
+                WakeWordService.ACTION_STATE -> wakeWordEnabled.value = intent.getBooleanExtra(WakeWordService.EXTRA_ACTIVE, false)
+                WakeWordService.ACTION_WAKE_DETECTED -> {
+                    wakeWordEnabled.value = false
+                    liveVoiceStatus.value = "Wake word detected · opening live voice…"
+                    stopWakeWord()
+                    window.decorView.postDelayed({ startLiveVoice() }, 600)
+                }
+            }
+        }
+    }
     private val neuralVoiceStatus = mutableStateOf("Neural voice not downloaded (about 400 MB)")
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -72,8 +88,38 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 onStopWakeWord = ::stopWakeWord
             )
         }
+        if (intent?.getBooleanExtra(WakeWordService.EXTRA_START_LIVE_VOICE, false) == true) {
+            window.decorView.postDelayed({ stopWakeWord(); startLiveVoice() }, 700)
+        }
     }
 
+    override fun onStart() {
+        super.onStart()
+        if (!wakeReceiverRegistered) {
+            val filter = IntentFilter().apply {
+                addAction(WakeWordService.ACTION_STATE)
+                addAction(WakeWordService.ACTION_WAKE_DETECTED)
+            }
+            ContextCompat.registerReceiver(this, wakeWordReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+            wakeReceiverRegistered = true
+        }
+    }
+
+    override fun onStop() {
+        if (wakeReceiverRegistered) {
+            unregisterReceiver(wakeWordReceiver)
+            wakeReceiverRegistered = false
+        }
+        super.onStop()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent.getBooleanExtra(WakeWordService.EXTRA_START_LIVE_VOICE, false)) {
+            window.decorView.postDelayed({ stopWakeWord(); startLiveVoice() }, 600)
+        }
+    }
 
     private fun startLiveVoice() {
         if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
