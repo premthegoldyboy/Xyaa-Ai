@@ -37,11 +37,13 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     private var tts: TextToSpeech? = null
     private lateinit var skills: SkillEngine
     private lateinit var neuralVoice: NeuralVoiceEngine
+    private lateinit var conversationMemory: ConversationMemory
     private val neuralVoiceStatus = mutableStateOf("Neural voice not downloaded (about 400 MB)")
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         skills = SkillEngine(this)
+        conversationMemory = ConversationMemory(this)
         neuralVoice = NeuralVoiceEngine(this) { status -> runOnUiThread { neuralVoiceStatus.value = status } }
         neuralVoice.initializeIfInstalled()
         tts = TextToSpeech(this, this)
@@ -52,7 +54,8 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 onSaveKey = { key -> SecureKeyStore(this).save(key) },
                 onLoadKey = { SecureKeyStore(this).read() },
                 neuralVoiceStatus = neuralVoiceStatus.value,
-                onDownloadNeuralVoice = { neuralVoice.downloadAndInitialize() }
+                onDownloadNeuralVoice = { neuralVoice.downloadAndInitialize() },
+                onClearMemory = { conversationMemory.clear() }
             )
         }
     }
@@ -90,8 +93,10 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     }
 
     private fun process(prompt: String, answer: (String, Boolean) -> Unit) {
+        conversationMemory.remember("user", prompt)
         val local = skills.execute(prompt)
         if (local != null) {
+            conversationMemory.remember("assistant", local)
             answer(local, true)
             say(local)
             return
@@ -99,6 +104,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         val key = SecureKeyStore(this).read()
         if (key.isNullOrBlank()) {
             val message = "I can handle built-in skills offline. Add your Gemini API key in Settings to enable open-ended AI conversations."
+            conversationMemory.remember("assistant", message)
             answer(message, true)
             say(message)
             return
@@ -132,10 +138,13 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 }
             }
 
+            val memoryContext = conversationMemory.contextForPrompt()
+            val contextualPrompt = if (memoryContext.isBlank()) prompt else
+                "Relevant recent conversation context (use only when helpful):\\n$memoryContext\\n\\nCurrent request: $prompt"
             val response = runCatching {
                 askGemini(
                     key,
-                    prompt,
+                    contextualPrompt,
                     onStatus = { status -> runOnUiThread { answer(status, false) } },
                     onText = { partial ->
                         if (partial.isEmpty()) {
@@ -171,6 +180,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             }.getOrElse { formatAiError(it) }
 
             if (speechBuffer.isNotBlank()) speakStreamChunk(speechBuffer.toString())
+            conversationMemory.remember("assistant", response)
             runOnUiThread {
                 answer(response, true)
                 // If streaming produced no speakable text (for example, an API error), use
@@ -412,7 +422,8 @@ private fun XyaaApp(
     onSaveKey: (String) -> Unit,
     onLoadKey: () -> String?,
     neuralVoiceStatus: String,
-    onDownloadNeuralVoice: () -> Unit
+    onDownloadNeuralVoice: () -> Unit,
+    onClearMemory: () -> Unit
 ) {
     var input by remember { mutableStateOf("") }
     var messages by remember { mutableStateOf(listOf(ChatMessage("Hey! I'm Zyaa. I can launch apps, search, set timers, calculate, save notes and much more. Ask me anything.", false))) }
@@ -555,6 +566,8 @@ private fun XyaaApp(
                         Text(neuralVoiceStatus, style = MaterialTheme.typography.bodySmall)
                         Button(onClick = onDownloadNeuralVoice, modifier = Modifier.fillMaxWidth()) { Text("Download neural voice (~400 MB)") }
                         Text("Kokoro runs on this phone after download. Speech generation is then offline.", style = MaterialTheme.typography.bodySmall)
+                        TextButton(onClick = onClearMemory, modifier = Modifier.fillMaxWidth()) { Text("Clear saved conversation memory") }
+                        Text("Recent chat context is stored on this device to help future replies. Clear it here at any time.", style = MaterialTheme.typography.bodySmall, color = Color(0xFF9B9BB0))
                     }
                 },
                 confirmButton = {
