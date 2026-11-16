@@ -26,16 +26,19 @@ class ProviderKeyStore(context: Context) {
         prefs.edit().putString(name, Base64.encodeToString(packed, Base64.NO_WRAP)).apply()
     }
 
-    fun read(provider: String): String? = runCatching {
+    fun read(provider: String): String? {
         val name = providerName(provider)
-        val packed = Base64.decode(prefs.getString(name, null) ?: return null, Base64.NO_WRAP)
-        require(packed.size > 12)
-        val iv = packed.copyOfRange(0, 12)
-        val encrypted = packed.copyOfRange(12, packed.size)
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.DECRYPT_MODE, getKey(name), GCMParameterSpec(128, iv))
-        String(cipher.doFinal(encrypted), Charsets.UTF_8)
-    }.getOrNull()
+        val encoded = prefs.getString(name, null) ?: return null
+        return runCatching {
+            val packed = Base64.decode(encoded, Base64.NO_WRAP)
+            require(packed.size > 12)
+            val iv = packed.copyOfRange(0, 12)
+            val encrypted = packed.copyOfRange(12, packed.size)
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(Cipher.DECRYPT_MODE, getKey(name), GCMParameterSpec(128, iv))
+            String(cipher.doFinal(encrypted), Charsets.UTF_8)
+        }.getOrNull()
+    }
 
     private fun providerName(value: String): String {
         require(value.matches(Regex("[a-zA-Z0-9_-]{1,32}")))
