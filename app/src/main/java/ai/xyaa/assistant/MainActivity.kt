@@ -5,6 +5,8 @@ import android.content.Intent
 import android.content.BroadcastReceiver
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.graphics.Paint
+import android.graphics.pdf.PdfDocument
 import android.os.Bundle
 import android.provider.Settings
 import android.speech.RecognizerIntent
@@ -44,6 +46,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     private lateinit var conversationMemory: ConversationMemory
     private val recentMemory = mutableStateOf<List<String>>(emptyList())
     private var liveVoiceSession: GeminiLiveVoiceSession? = null
+    private var pdfDraft = ""
     private val liveVoiceActive = mutableStateOf(false)
     private val liveVoiceStatus = mutableStateOf("Live voice is off")
     private val liveTranscript = mutableStateOf("")
@@ -244,6 +247,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
 
     private fun process(prompt: String, answer: (String, Boolean) -> Unit) {
         rememberTurn("user", prompt)
+        if (LinkAgent.matches(prompt)) { val result = LinkAgent.generate(prompt); rememberTurn("assistant", result); answer(result, true); say("Links prepared."); return }
         val local = skills.execute(prompt)
         if (local != null) {
             rememberTurn("assistant", local)
@@ -265,36 +269,10 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         }
         answer("Connecting to Gemini…", false)
         Thread {
-            val speechBuffer = StringBuilder()
-            var lastStreamLength = 0
-            var hasSpokenStream = false
-            var firstSpeechChunk = true
-
-            fun speakStreamChunk(chunk: String) {
-                val clean = chunk.trim()
-                if (clean.isBlank()) return
-                hasSpokenStream = true
-                val queueMode = if (firstSpeechChunk) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
-                firstSpeechChunk = false
-                val spoken = clean
-                    .replace(Regex("(?i)\\bX\\s*Y\\s*A\\s*A\\b"), "Zyaa")
-                    .replace(Regex("(?i)\\bXYAA\\b"), "Zyaa")
-                // Prefer Kokoro for streamed Gemini sentences; retain Android TTS as fallback.
-                val neuralQueued = neuralVoice.speak(spoken) {
-                    runOnUiThread {
-                        tts?.speak(spoken, queueMode, null, "xyaa-stream-fallback-" + System.nanoTime())
-                    }
-                }
-                if (!neuralQueued) {
-                    runOnUiThread {
-                        tts?.speak(spoken, queueMode, null, "xyaa-stream-" + System.nanoTime())
-                    }
-                }
-            }
-
             val memoryContext = conversationMemory.contextForPrompt()
-            val contextualPrompt = if (memoryContext.isBlank()) prompt else
-                "Relevant recent conversation context (use only when helpful):\\n$memoryContext\\n\\nCurrent request: $prompt"
+            val contextualPrompt = "You are XYAA, a helpful, precise personal AI. Answer directly, structure complex answers with headings and steps, explain uncertainty, and never invent sources or claim actions you did not perform.\\n\\n" + (if (memoryContext.isBlank()) "" else "Recent context:\\n$memoryContext\\n\\n") + "Current request: $prompt"
+            val pdfRequest = PdfAgent.isRequest(prompt)
+            val aiPrompt = if (pdfRequest) PdfAgent.contentPrompt(prompt) else contextualPrompt
 
             if (isResearchRequest(prompt)) {
                 val topic = extractResearchTopic(prompt)
@@ -321,61 +299,56 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 if (key.isNullOrBlank()) throw IllegalStateException("Gemini key not configured.")
                 askGemini(
                     key,
-                    contextualPrompt,
+                    aiPrompt,
                     onStatus = { status -> runOnUiThread { answer(status, false) } },
                     onText = { partial ->
-                        if (partial.isEmpty()) {
-                            speechBuffer.clear()
-                            lastStreamLength = 0
-                        } else if (partial.length >= lastStreamLength) {
-                            val delta = partial.substring(lastStreamLength)
-                            lastStreamLength = partial.length
-                            speechBuffer.append(delta)
-                            // Start speech as soon as five complete words are available.
-                            // Then stream in ten-word phrases; punctuation is used immediately
-                            // when it forms a natural boundary, without waiting for the SSE turn to end.
-                            while (true) {
-                                val current = speechBuffer.toString()
-                                val boundary = Regex("[,;.!?](?:[\\s\\n]+|$)").find(current)
-                                if (boundary != null) {
-                                    val phrase = current.substring(0, boundary.range.first + 1).trim()
-                                    val words = phrase.split(Regex("\\s+")).size
-                                    if (phrase.isNotBlank() && (boundary.value.first() != ',' || words >= 4)) {
-                                        speakStreamChunk(phrase)
-                                        speechBuffer.delete(0, boundary.range.last + 1)
-                                        continue
-                                    }
-                                }
-                                val threshold = if (firstSpeechChunk) 5 else 10
-                                val readyPhrase = Regex("^(?:\\S+\\s+){${threshold - 1}}\\S+\\s").find(current) ?: break
-                                val cut = readyPhrase.range.last + 1
-                                speakStreamChunk(current.substring(0, cut))
-                                speechBuffer.delete(0, cut)
-                            }
-                        }
                         runOnUiThread { answer(partial, false) }
                     }
                 )
             }.recoverCatching { geminiError ->
                 if (groqKey.isNullOrBlank() && deepSeekKey.isNullOrBlank()) throw geminiError
                 runOnUiThread { answer("Gemini unavailable · switching to a backup brain…", false) }
-                ProviderFallbackClient(groqKey, deepSeekKey).complete(contextualPrompt) { provider ->
+                ProviderFallbackClient(groqKey, deepSeekKey).complete(aiPrompt) { provider ->
                     runOnUiThread { answer("Connected to $provider…", false) }
                 }
             }.getOrElse { formatAiError(it) }
 
-            if (speechBuffer.isNotBlank()) speakStreamChunk(speechBuffer.toString())
             rememberTurn("assistant", response)
             runOnUiThread {
                 answer(response, true)
-                // If streaming produced no speakable text (for example, an API error), use
-                // the normal voice path. Otherwise the streamed sentences are already queued.
-                if (!hasSpokenStream) say(response)
+                if (pdfRequest && response.isNotBlank()) { pdfDraft = response; openPdfPicker() }
+                window.decorView.postDelayed({ say(response) }, 180)
             }
         }.start()
     }
 
 
+    private fun openPdfPicker() {
+        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply { addCategory(Intent.CATEGORY_OPENABLE); type = "application/pdf"; putExtra(Intent.EXTRA_TITLE, "XYAA-Document.pdf") }
+        startActivityForResult(intent, 71)
+    }
+    @Deprecated("Legacy callback retained for compatibility")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != 71 || resultCode != Activity.RESULT_OK) return
+        val uri = data?.data ?: return
+        runCatching {
+            val output = contentResolver.openOutputStream(uri) ?: error("Cannot open destination")
+            output.use { stream ->
+                val pdf = PdfDocument(); val page = pdf.startPage(PdfDocument.PageInfo.Builder(595, 842, 1).create())
+                val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 11f; color = android.graphics.Color.DKGRAY }
+                var y = 55f
+                pdfDraft.replace("\r", "").split("\n").forEach { raw ->
+                    val line = raw.trim().take(100)
+                    if (y > 800f) y = 55f
+                    if (line.isNotBlank()) page.canvas.drawText(line, 42f, y, paint)
+                    y += 17f
+                }
+                pdf.finishPage(page); pdf.writeTo(stream); pdf.close()
+            }
+            say("Your PDF has been saved.")
+        }.onFailure { say("PDF export failed: " + it.message.orEmpty().take(80)) }
+    }
     private fun isResearchRequest(prompt: String): Boolean = Regex(
         "^\\s*(research|investigate|compare|make (?:me )?a report(?: on)?|write (?:me )?a report(?: on)?|find out about|summari[sz]e (?:the )?(?:latest )?(?:news|information) about)\\b",
         RegexOption.IGNORE_CASE
