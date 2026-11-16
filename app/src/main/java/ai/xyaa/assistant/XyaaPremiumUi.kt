@@ -90,9 +90,8 @@ internal fun XyaaPremiumApp(
         input = ""
         busy = true
         onSend(prompt) { response, finished ->
-            // Provider/voice state labels are UI internals, never chat replies.
-            val visible = if (response == "Thinking…" || response == "Speaking…") "" else response
-            messages = messages.dropLast(1) + (visible to false)
+            // Keep the familiar Thinking… and Speaking… status visible while XYAA works.
+            messages = messages.dropLast(1) + (response to false)
             if (finished) busy = false
         }
     }
