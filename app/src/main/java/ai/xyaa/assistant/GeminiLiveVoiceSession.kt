@@ -19,6 +19,7 @@ import okhttp3.WebSocketListener
 import org.json.JSONObject
 import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -45,6 +46,9 @@ class GeminiLiveVoiceSession(
         .readTimeout(0, TimeUnit.MILLISECONDS)
         .build()
     private val stopped = AtomicBoolean(false)
+    private val playbackExecutor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "XYAA-Live-Audio-Playback").apply { priority = Thread.MAX_PRIORITY }
+    }
     private val ready = AtomicBoolean(false)
     private val audioStarted = AtomicBoolean(false)
     @Volatile private var socket: WebSocket? = null
@@ -178,8 +182,13 @@ class GeminiLiveVoiceSession(
         }.apply { name = "XYAA-Live-Microphone"; start() }
     }
 
-    @Synchronized
     private fun playPcm(bytes: ByteArray) {
+        if (stopped.get() || bytes.isEmpty()) return
+        playbackExecutor.execute { writePcm(bytes) }
+    }
+
+    @Synchronized
+    private fun writePcm(bytes: ByteArray) {
         if (stopped.get() || bytes.isEmpty()) return
         var output = track
         if (output == null || output.state != AudioTrack.STATE_INITIALIZED) {
@@ -221,6 +230,7 @@ class GeminiLiveVoiceSession(
         track = null
         socket?.close(1000, "User ended live voice")
         socket = null
+        playbackExecutor.shutdownNow()
         finish()
     }
 
@@ -233,6 +243,7 @@ class GeminiLiveVoiceSession(
         runCatching { track?.pause(); track?.flush(); track?.stop(); track?.release() }
         track = null
         micThread = null
+        playbackExecutor.shutdownNow()
         onClosed()
     }
 }
