@@ -11,10 +11,14 @@ object PdfAgent {
     fun contentPrompt(prompt: String): String = """
         Create polished, complete document content for the user's PDF request:
         "$prompt"
-        Return only the document body in clean Markdown. Use a clear title, useful sections,
-        concise paragraphs and lists where appropriate. Do not claim that a PDF file is saved;
-        XYAA will convert this content into a PDF after the user chooses a save location.
-        If the requested subject needs current facts, clearly label uncertainty and do not invent sources.
+        Produce the actual requested document, not a description of a document or a generic template.
+        Never output placeholder headings such as "Document Overview", "Purpose", "Format", "Key Sections",
+        "Details", or "Conclusion" unless those sections contain specific, useful information about the
+        requested subject. Include concrete facts, explanations, comparisons, practical details, and
+        a useful conclusion appropriate to the topic. If the request asks for research, use the research
+        workflow and cite verifiable sources rather than guessing.
+        Return only the complete document body in clean Markdown, with a specific title and meaningful
+        subject-specific sections. Do not ask the user to choose a save location in the document.
     """.trimIndent()
 }
 
