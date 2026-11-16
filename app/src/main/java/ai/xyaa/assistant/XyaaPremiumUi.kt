@@ -51,6 +51,7 @@ internal fun XyaaPremiumApp(
     neuralVoiceStatus: String,
     onDownloadNeuralVoice: () -> Unit,
     onClearMemory: () -> Unit,
+    onShareReport: (String) -> Unit,
     recentMemory: List<String>,
     liveVoiceActive: Boolean,
     liveVoiceStatus: String,
@@ -131,7 +132,7 @@ internal fun XyaaPremiumApp(
                         onStartLiveVoice, onStopLiveVoice, onVoice)
                     "Chat" -> ChatPage(messages, input, { input = it }, busy, { submit(it) }, onVoice)
                     "Research" -> ResearchPage(researchQuery, { researchQuery = it }, busy,
-                        { q -> researchQuery = q; tab = "Research"; submit("Research $q") }, messages)
+                        { q -> researchQuery = q; tab = "Research"; submit("Research $q") }, messages, onShareReport)
                     "Skills" -> SkillsPage { command ->
                         if (command in setOf("Remind me to", "Save a note that ", "Search for", "Directions to", "Translate ")) {
                             input = command
@@ -293,7 +294,7 @@ private fun ChatPage(
 @Composable
 private fun ResearchPage(
     query: String, onQuery: (String) -> Unit, busy: Boolean, run: (String) -> Unit,
-    messages: List<Pair<String, Boolean>>
+    messages: List<Pair<String, Boolean>>, onShare: (String) -> Unit
 ) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp)) {
         Heading("Deep research", "Explore a topic and build a cited report")
@@ -313,7 +314,13 @@ private fun ResearchPage(
         val report = messages.lastOrNull { !it.second && it.first.contains("##") }?.first
         if (report.isNullOrBlank()) InfoCard("No report yet", "Your completed report and returned sources will appear here.", "WAITING")
         else Surface(color = Panel, shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
-            Text(report, Modifier.padding(15.dp), color = White, fontSize = 12.sp, lineHeight = 18.sp)
+            Column(Modifier.padding(15.dp)) {
+                Text(report, color = White, fontSize = 12.sp, lineHeight = 18.sp)
+                Spacer(Modifier.height(12.dp))
+                OutlinedButton(onClick = { onShare(report) }, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Default.Share, null); Spacer(Modifier.width(8.dp)); Text("Share / export report")
+                }
+            }
         }
         Spacer(Modifier.height(18.dp))
     }
