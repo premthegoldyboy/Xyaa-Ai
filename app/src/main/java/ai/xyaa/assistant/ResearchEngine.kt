@@ -193,7 +193,7 @@ $context"""
     }
 
     private fun splitSpoken(raw: String): Pair<String, String> {
-        val match = Regex("^\\s*SPOKEN:\\s*(.+?)(?:\\r?\\n)+", RegexOption.IGNORE_CASE or RegexOption.DOT_MATCHES_ALL).find(raw)
+        val match = Regex("^\\s*SPOKEN:\\s*(.+?)(?:\\r?\\n)+", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).find(raw)
         return if (match != null) match.groupValues[1].trim() to raw.substring(match.range.last + 1).trim()
         else "I've finished researching $topicPlaceholder.".let { it to raw.trim() }
     }
