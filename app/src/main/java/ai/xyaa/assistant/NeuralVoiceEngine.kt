@@ -96,6 +96,7 @@ class NeuralVoiceEngine(private val context: Context, private val onStatus: (Str
     fun speak(
         text: String,
         onComplete: () -> Unit = {},
+        onChunk: (String) -> Unit = {},
         fallback: () -> Unit = {}
     ): Boolean {
         val active = engine ?: return false
@@ -104,12 +105,17 @@ class NeuralVoiceEngine(private val context: Context, private val onStatus: (Str
             try {
                 val spoken = text.replace(Regex("(?i)\\bX\\s*Y\\s*A\\s*A\\b"), "Zyaa")
                     .replace(Regex("(?i)\\bXYAA\\b"), "Zyaa")
-                speechChunks(spoken).forEach { chunk ->
+                val chunks = speechChunks(spoken)
+                val revealed = StringBuilder()
+                chunks.forEach { chunk ->
                     if (closed) return@execute
                     val audio = active.generate(chunk, sid = VOICE_ID, speed = 1.08f)
                     // Wait for each chunk to finish before synthesizing/playing the next.
                     // This prevents overlapping audio and keeps long answers on Kokoro.
                     playbackExecutor.submit { play(audio.samples, audio.sampleRate) }.get()
+                    if (revealed.isNotEmpty()) revealed.append(' ')
+                    revealed.append(chunk)
+                    if (!closed) onChunk(revealed.toString())
                 }
                 if (!closed) onComplete()
             } catch (error: Throwable) {
