@@ -158,8 +158,8 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                                     speechBuffer.delete(0, boundary.range.last + 1)
                                     continue
                                 }
-                                val tenthWord = Regex("^(?:\\S+\\s+){9}\\S+").find(current) ?: break
-                                val cut = tenthWord.range.last + 1
+                                val twentiethWord = Regex("^(?:\\S+\\s+){19}\\S+").find(current) ?: break
+                                val cut = twentiethWord.range.last + 1
                                 if (cut >= current.length) break
                                 speakStreamChunk(current.substring(0, cut))
                                 speechBuffer.delete(0, cut)
