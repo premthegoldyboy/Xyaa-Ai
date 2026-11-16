@@ -2,6 +2,8 @@ package ai.xyaa.assistant
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.Intent
 import android.content.Context
 import android.os.Build
 import androidx.core.app.NotificationCompat
@@ -23,11 +25,21 @@ class ReminderWorker(context: Context, params: WorkerParameters) : Worker(contex
         if (!NotificationManagerCompat.from(applicationContext).areNotificationsEnabled()) {
             return Result.success()
         }
+        val openApp = Intent(applicationContext, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val contentIntent = PendingIntent.getActivity(
+            applicationContext,
+            idFrom(inputData.getString(KEY_ID)),
+            openApp,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
         val notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
             .setContentTitle(title)
             .setContentText(detail)
             .setStyle(NotificationCompat.BigTextStyle().bigText(detail))
+            .setContentIntent(contentIntent)
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .build()
