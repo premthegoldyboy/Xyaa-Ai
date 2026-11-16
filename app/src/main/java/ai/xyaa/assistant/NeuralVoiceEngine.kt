@@ -93,27 +93,59 @@ class NeuralVoiceEngine(private val context: Context, private val onStatus: (Str
         }
     }
 
-    fun speak(text: String, fallback: () -> Unit = {}): Boolean {
+    fun speak(
+        text: String,
+        onComplete: () -> Unit = {},
+        fallback: () -> Unit = {}
+    ): Boolean {
         val active = engine ?: return false
         if (closed || text.isBlank()) return false
         executor.execute {
-            runCatching {
+            try {
                 val spoken = text.replace(Regex("(?i)\\bX\\s*Y\\s*A\\s*A\\b"), "Zyaa")
                     .replace(Regex("(?i)\\bXYAA\\b"), "Zyaa")
-                val audio = active.generate(spoken, sid = VOICE_ID, speed = 1.08f)
-                playbackExecutor.execute {
-                    runCatching { play(audio.samples, audio.sampleRate) }
-                        .onFailure {
-                            onStatus("Neural audio output failed; switching to device voice.")
-                            if (!closed) fallback()
-                        }
+                speechChunks(spoken).forEach { chunk ->
+                    if (closed) return@execute
+                    val audio = active.generate(chunk, sid = VOICE_ID, speed = 1.08f)
+                    // Wait for each chunk to finish before synthesizing/playing the next.
+                    // This prevents overlapping audio and keeps long answers on Kokoro.
+                    playbackExecutor.submit { play(audio.samples, audio.sampleRate) }.get()
                 }
-            }.onFailure {
+                if (!closed) onComplete()
+            } catch (error: Throwable) {
                 onStatus("Neural voice playback failed; switching to device voice for this reply.")
                 if (!closed) fallback()
             }
         }
         return true
+    }
+
+    private fun speechChunks(text: String, maxChars: Int = 240): List<String> {
+        val sentences = text.replace("\\n", " ").split(Regex("(?<=[.!?])\\s+"))
+            .map { it.trim() }.filter { it.isNotEmpty() }
+        val chunks = mutableListOf<String>()
+        var current = StringBuilder()
+        sentences.forEach { sentence ->
+            if (current.isNotEmpty() && current.length + sentence.length + 1 > maxChars) {
+                chunks.add(current.toString())
+                current = StringBuilder()
+            }
+            if (sentence.length <= maxChars) {
+                if (current.isNotEmpty()) current.append(' ')
+                current.append(sentence)
+            } else {
+                sentence.split(Regex("\\s+")).forEach { word ->
+                    if (current.isNotEmpty() && current.length + word.length + 1 > maxChars) {
+                        chunks.add(current.toString())
+                        current = StringBuilder()
+                    }
+                    if (current.isNotEmpty()) current.append(' ')
+                    current.append(word)
+                }
+            }
+        }
+        if (current.isNotEmpty()) chunks.add(current.toString())
+        return chunks
     }
 
     private fun createEngine(): OfflineTts {
