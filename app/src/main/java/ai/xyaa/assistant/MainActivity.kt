@@ -123,7 +123,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
 
     private fun startLiveVoice() {
         if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO), 43)
+            requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO), 47)
             liveVoiceStatus.value = "Allow microphone access to start live voice."
             return
         }
@@ -142,7 +142,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             onTranscript = { text, fromUser ->
                 runOnUiThread {
                     val line = (if (fromUser) "You: " else "XYAA: ") + text.trim()
-                    liveTranscript.value = (liveTranscript.value + "\\n" + line).trim().takeLast(2400)
+                    liveTranscript.value = (liveTranscript.value + "\n" + line).trim().takeLast(2400)
                 }
             },
             onClosed = {
@@ -519,6 +519,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == 43 && grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) startVoiceInput()
+        if (requestCode == 47 && grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) startLiveVoice()
         if (requestCode == 46) {
             val audioGranted = checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
             val notificationsGranted = android.os.Build.VERSION.SDK_INT < 33 ||
