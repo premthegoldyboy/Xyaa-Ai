@@ -214,8 +214,8 @@ private fun HomePage(
 
 @Composable
 private fun EnergyOrb(modifier: Modifier = Modifier, active: Boolean = false) {
-    // XYAA's orb follows the supplied Uiverse molten-sphere concept:
-    // a clipped, rotating set of liquid polygon forms with shifting gradients.
+    // Native Compose adaptation of the supplied Uiverse.io orb by andrew-manzyk (MIT):
+    // clipped molten sphere, rotating polygonal flows, and continuously shifting gradients.
     val motion = rememberInfiniteTransition(label = "xyaa-molten-orb")
     val rotation by motion.animateFloat(
         0f, 360f,
@@ -387,7 +387,6 @@ private fun ChatPage(
 ) {
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         Heading("Conversation", "A clear space for ideas and answers")
-        if (voiceStatus.isNotBlank()) Text(voiceStatus, Modifier.fillMaxWidth().padding(bottom = 8.dp), color = Cyan, fontSize = 11.sp)
         if (messages.isEmpty()) {
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -407,7 +406,7 @@ private fun ChatPage(
                     } else {
                         Surface(color = if (fromUser) Color(0xFF39245D) else Panel,
                             shape = RoundedCornerShape(18.dp), modifier = Modifier.widthIn(max = 330.dp).border(1.dp, Line, RoundedCornerShape(18.dp))) {
-                            Text(text, Modifier.padding(14.dp), color = White, fontSize = 13.sp, lineHeight = 20.sp)
+                            Text(text + if (busy && !fromUser) "  ▍" else "", Modifier.padding(14.dp), color = White, fontSize = 13.sp, lineHeight = 20.sp)
                         }
                     }
                 }
