@@ -238,6 +238,38 @@ private fun EnergyOrb(modifier: Modifier = Modifier, active: Boolean = false) {
 
 
 @Composable
+private fun GooeyThinkingDots(modifier: Modifier = Modifier) {
+    val transition = rememberInfiniteTransition(label = "gooey-thinking")
+    val phase by transition.animateFloat(
+        initialValue = 0f, targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(2000), RepeatMode.Restart),
+        label = "gooey-phase"
+    )
+    Canvas(modifier) {
+        val center = Offset(size.width * .5f, size.height * .5f)
+        val radius = size.minDimension * .17f
+        val travel = size.minDimension * .30f
+        val t = phase
+        val lift = if (t < .5f) t * 2f else (1f - t) * 2f
+        val spread = if (t < .5f) lift else 1f
+        val points = listOf(
+            Offset(center.x, center.y - travel * lift),
+            Offset(center.x - travel * spread, center.y + travel * .72f * lift),
+            Offset(center.x + travel * spread, center.y + travel * .72f * lift)
+        )
+        val colors = listOf(Cyan, Violet, Color(0xFFB99AFF))
+        points.forEachIndexed { index, point ->
+            val scale = if (t in .38f.. .82f) .72f else 1f
+            drawCircle(colors[index].copy(alpha = .22f), radius * 2.1f * scale, point)
+            drawCircle(Brush.radialGradient(listOf(Color.White.copy(alpha = .95f), colors[index], colors[index].copy(alpha = .2f))),
+                radius * scale, point)
+        }
+        // Soft central bridge creates a gooey, merging impression without a costly blur filter.
+        drawCircle(Violet.copy(alpha = .38f), radius * .88f, center)
+    }
+}
+
+@Composable
 private fun LiveVoicePage(
     active: Boolean, status: String, transcript: String,
     start: () -> Unit, stop: () -> Unit, voiceInput: () -> Unit
@@ -298,8 +330,11 @@ private fun ChatPage(
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = if (fromUser) Arrangement.End else Arrangement.Start, verticalAlignment = Alignment.CenterVertically) {
                     if (!fromUser && (text == "Thinking…" || text == "Speaking…")) {
                         EnergyOrb(Modifier.size(58.dp), active = true)
-                        Text(if (text == "Thinking…") "XYAA is thinking" else "XYAA is speaking",
-                            Modifier.padding(start = 8.dp), color = Cyan, fontSize = 12.sp)
+                        Column(Modifier.padding(start = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(if (text == "Thinking…") "XYAA is thinking" else "XYAA is speaking",
+                                color = Cyan, fontSize = 12.sp)
+                            if (text == "Thinking…") GooeyThinkingDots(Modifier.size(width = 42.dp, height = 24.dp))
+                        }
                     } else {
                         Surface(color = if (fromUser) Color(0xFF39245D) else Panel,
                             shape = RoundedCornerShape(18.dp), modifier = Modifier.widthIn(max = 330.dp).border(1.dp, Line, RoundedCornerShape(18.dp))) {
