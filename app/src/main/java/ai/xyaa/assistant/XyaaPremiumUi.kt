@@ -393,10 +393,9 @@ private fun ChatPage(
                                 Text("XYAA", color = Cyan, fontSize = 9.sp, letterSpacing = 1.4.sp, fontWeight = FontWeight.Bold)
                                 Spacer(Modifier.height(5.dp))
                                 if (text.isBlank()) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        EnergyOrb(Modifier.size(35.dp), active = true)
-                                        Spacer(Modifier.width(8.dp))
-                                        GooeyThinkingDots(Modifier.size(width = 42.dp, height = 24.dp))
+                                    Surface(color = Panel, shape = RoundedCornerShape(14.dp),
+                                        modifier = Modifier.border(1.dp, Line, RoundedCornerShape(14.dp))) {
+                                        Text("Connecting…", Modifier.padding(horizontal = 13.dp, vertical = 9.dp), color = Muted, fontSize = 12.sp)
                                     }
                                 } else {
                                     Surface(color = Panel, shape = RoundedCornerShape(5.dp, 18.dp, 18.dp, 18.dp),
