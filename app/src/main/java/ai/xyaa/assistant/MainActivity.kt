@@ -232,7 +232,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     }
 
     private fun say(text: String) {
-        val spoken = text
+        val spoken = AssistantTextFormatter.forDisplay(text)
             .replace(Regex("(?i)\\bX\\s*Y\\s*A\\s*A\\b"), "Zyaa")
             .replace(Regex("(?i)\\bXYAA\\b"), "Zyaa")
         val neuralQueued = neuralVoice.speak(spoken) {
@@ -249,12 +249,13 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
      * A paced fallback is used for engines that do not emit range callbacks.
      */
     private fun speakChatAnswer(text: String, onProgress: (String) -> Unit, onComplete: () -> Unit) {
-        if (text.isBlank()) {
-            onProgress(text)
+        val speechText = AssistantTextFormatter.forDisplay(text)
+        if (speechText.isBlank()) {
+            onProgress(speechText)
             onComplete()
             return
         }
-        val spoken = text
+        val spoken = speechText
             .replace(Regex("(?i)\\bX\\s*Y\\s*A\\s*A\\b"), "Zyaa")
             .replace(Regex("(?i)\\bXYAA\\b"), "Zyaa")
         val handler = Handler(Looper.getMainLooper())
@@ -262,7 +263,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         val completed = java.util.concurrent.atomic.AtomicBoolean(false)
         fun finish() {
             if (completed.compareAndSet(false, true)) handler.post {
-                onProgress(text)
+                onProgress(speechText)
                 onComplete()
             }
         }
@@ -279,7 +280,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                     else {
                         var sawRange = false
                         var wordIndex = 0
-                        val starts = Regex("\\S+").findAll(text).toList()
+                        val starts = Regex("\\S+").findAll(speechText).toList()
                         var fallbackTick: Runnable? = null
                         fun stopFallback() {
                             fallbackTick?.let(handler::removeCallbacks)
@@ -293,7 +294,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                                         fun revealNext() {
                                             if (sawRange || wordIndex >= starts.size || completed.get()) return
                                             val end = starts[wordIndex].range.last + 1
-                                            onProgress(text.substring(0, end))
+                                            onProgress(speechText.substring(0, end))
                                             wordIndex++
                                             fallbackTick = Runnable { revealNext() }
                                             handler.postDelayed(fallbackTick!!, 300L)
@@ -306,7 +307,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                                 if (id != utteranceId) return
                                 sawRange = true
                                 stopFallback()
-                                handler.post { if (!completed.get()) onProgress(text.substring(0, end.coerceIn(0, text.length))) }
+                                handler.post { if (!completed.get()) onProgress(speechText.substring(0, end.coerceIn(0, speechText.length))) }
                             }
                             override fun onDone(id: String?) {
                                 if (id == utteranceId) { stopFallback(); finish() }
@@ -328,7 +329,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             else {
                 var sawRange = false
                 var wordIndex = 0
-                val starts = Regex("\\S+").findAll(text).toList()
+                val starts = Regex("\\S+").findAll(speechText).toList()
                 var fallbackTick: Runnable? = null
                 fun stopFallback() {
                     fallbackTick?.let(handler::removeCallbacks)
@@ -342,7 +343,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                                 fun revealNext() {
                                     if (sawRange || wordIndex >= starts.size || completed.get()) return
                                     val end = starts[wordIndex].range.last + 1
-                                    onProgress(text.substring(0, end))
+                                    onProgress(speechText.substring(0, end))
                                     wordIndex++
                                     fallbackTick = Runnable { revealNext() }
                                     handler.postDelayed(fallbackTick!!, 300L)
@@ -355,7 +356,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                         if (id != utteranceId) return
                         sawRange = true
                         stopFallback()
-                        handler.post { if (!completed.get()) onProgress(text.substring(0, end.coerceIn(0, text.length))) }
+                        handler.post { if (!completed.get()) onProgress(speechText.substring(0, end.coerceIn(0, speechText.length))) }
                     }
                     override fun onDone(id: String?) {
                         if (id == utteranceId) { stopFallback(); finish() }

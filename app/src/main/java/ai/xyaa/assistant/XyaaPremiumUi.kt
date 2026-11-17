@@ -221,52 +221,138 @@ private fun HomePage(
 
 @Composable
 private fun EnergyOrb(modifier: Modifier = Modifier, active: Boolean = false) {
-    // A living plasma core: independent orbital ribbons, breathing nucleus and moving highlights.
-    val motion = rememberInfiniteTransition(label = "xyaa-plasma-core")
-    val orbitA by motion.animateFloat(0f, 360f, infiniteRepeatable(tween(if(active) 5200 else 11000, easing = androidx.compose.animation.core.LinearEasing), RepeatMode.Restart), label = "orbit-a")
-    val orbitB by motion.animateFloat(360f, 0f, infiniteRepeatable(tween(if(active) 3900 else 9000, easing = androidx.compose.animation.core.LinearEasing), RepeatMode.Restart), label = "orbit-b")
-    val breathe by motion.animateFloat(.91f, 1.08f, infiniteRepeatable(tween(if(active) 850 else 1800, easing = androidx.compose.animation.core.FastOutSlowInEasing), RepeatMode.Reverse), label = "breathe")
-    val wave by motion.animateFloat(0f, 1f, infiniteRepeatable(tween(2600, easing = androidx.compose.animation.core.FastOutSlowInEasing), RepeatMode.Reverse), label = "wave")
+    // Compose recreation of the andrew-manzyk molten loader: seven clipped,
+    // rotating amber/orange liquid facets with a breathing, rounded core.
+    val motion = rememberInfiniteTransition(label = "xyaa-molten-orb")
+    val rotation by motion.animateFloat(
+        0f, 360f,
+        infiniteRepeatable(tween(2000, easing = androidx.compose.animation.core.LinearEasing), RepeatMode.Restart),
+        label = "molten-rotation"
+    )
+    val roundness by motion.animateFloat(
+        0f, 1f,
+        infiniteRepeatable(tween(1000, easing = androidx.compose.animation.core.FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "molten-roundness"
+    )
+    val breathe by motion.animateFloat(
+        .96f, 1.045f,
+        infiniteRepeatable(tween(if (active) 650 else 1300, easing = androidx.compose.animation.core.FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "molten-breathe"
+    )
+    val colorPhase by motion.animateFloat(
+        0f, 1f,
+        infiniteRepeatable(tween(2000, easing = androidx.compose.animation.core.LinearEasing), RepeatMode.Restart),
+        label = "molten-color"
+    )
+
+    val amber = Color(0xFFFFBF48)
+    val burnt = Color(0xFFBE4A1D)
+    val softAmber = Color(0x80FFBF47)
+    val softBurnt = Color(0x80BF4A1D)
+    val ember = Color(0x40FFBF47)
+
     Canvas(modifier) {
-        val c = Offset(size.width/2f, size.height/2f)
-        val r = size.minDimension * .245f
-        val halo = r * (2.25f + .12f*breathe)
-        drawCircle(Brush.radialGradient(listOf(Color(0x7748DFFF),Color(0x449A55FF),Color.Transparent),c,halo),halo,c)
-        drawCircle(Brush.radialGradient(listOf(Color(0x22FFFFFF),Color(0x223E9EFF),Color.Transparent),c,r*2.0f),r*2f,c)
-        // Asymmetric orbiting plasma ribbons, not a single rotating disc.
-        rotate(orbitA,c) {
-            val p=Path().apply {
-                moveTo(c.x-r*1.75f,c.y-r*.12f)
-                cubicTo(c.x-r*.9f,c.y-r*1.35f,c.x+r*.85f,c.y-r*1.25f,c.x+r*1.7f,c.y-r*.1f)
-                cubicTo(c.x+r*.72f,c.y-r*.48f,c.x-r*.55f,c.y+r*.72f,c.x-r*1.75f,c.y-r*.12f)
-                close()
-            }
-            drawPath(p,Brush.linearGradient(listOf(Color(0x0047E8FF),Color(0xAA47E8FF),Color(0xBB9A55FF),Color(0x0047E8FF)),Offset(c.x-r*1.6f,c.y-r),Offset(c.x+r*1.6f,c.y+r)),alpha=.8f)
+        val center = Offset(size.width * .5f, size.height * .5f)
+        val radius = size.minDimension * .285f
+        val coreRadius = radius * breathe
+        val circle = Path().apply {
+            addOval(Rect(center.x - radius, center.y - radius, center.x + radius, center.y + radius))
         }
-        rotate(orbitB,c) {
-            val p=Path().apply {
-                moveTo(c.x-r*1.65f,c.y+r*.25f)
-                cubicTo(c.x-r*.7f,c.y-r*.95f,c.x+r*.75f,c.y-r*.85f,c.x+r*1.65f,c.y+r*.12f)
-                cubicTo(c.x+r*.4f,c.y+r*.38f,c.x-r*.55f,c.y+r*1.05f,c.x-r*1.65f,c.y+r*.25f)
-                close()
+
+        // Warm atmospheric glow, kept subtle so the molten shape remains crisp.
+        drawCircle(
+            Brush.radialGradient(listOf(softAmber.copy(alpha = .42f), softBurnt.copy(alpha = .20f), Color.Transparent), center, radius * 2.05f),
+            radius * 2.05f, center
+        )
+        drawCircle(
+            Brush.radialGradient(listOf(ember.copy(alpha = .8f), Color.Transparent), center, radius * 1.48f),
+            radius * 1.48f, center
+        )
+
+        clipPath(circle) {
+            // Seven independently offset polygonal liquid plates. Their softened
+            // vertices pulse between rounded and angular, echoing the SVG clip set.
+            repeat(7) { index ->
+                val plateRotation = rotation * (if (index % 2 == 0) 1f else -0.72f) + index * 51.43f
+                rotate(plateRotation, center) {
+                    val base = listOf(.20f, .83f, .66f, .98f, .48f, .88f, .28f, .76f)
+                    val points = base.mapIndexed { pointIndex, factor ->
+                        val angle = Math.toRadians((pointIndex * 45.0 - 157.5 + index * 7.0))
+                        val wobble = if (pointIndex % 2 == 0) roundness * .11f else -roundness * .08f
+                        val distance = radius * (factor + wobble) * (if (index % 2 == 0) 1f else .94f)
+                        Offset(
+                            center.x + kotlin.math.cos(angle).toFloat() * distance,
+                            center.y + kotlin.math.sin(angle).toFloat() * distance
+                        )
+                    }
+                    val shape = Path().apply {
+                        fun midpoint(a: Offset, b: Offset) = Offset((a.x + b.x) * .5f, (a.y + b.y) * .5f)
+                        moveTo(midpoint(points.last(), points.first()).x, midpoint(points.last(), points.first()).y)
+                        points.indices.forEach { pointIndex ->
+                            val next = points[(pointIndex + 1) % points.size]
+                            val mid = midpoint(points[pointIndex], next)
+                            quadraticTo(points[pointIndex].x, points[pointIndex].y, mid.x, mid.y)
+                        }
+                        close()
+                    }
+                    val blend = ((colorPhase + index * .115f) % 1f)
+                    fun mixColor(a: Color, b: Color, t: Float) = Color(
+                        red = a.red + (b.red - a.red) * t,
+                        green = a.green + (b.green - a.green) * t,
+                        blue = a.blue + (b.blue - a.blue) * t,
+                        alpha = a.alpha + (b.alpha - a.alpha) * t
+                    )
+                    val hot = mixColor(amber, burnt, blend)
+                    val cool = mixColor(burnt, Color(0xFF7A2818), blend)
+                    drawPath(
+                        shape,
+                        Brush.linearGradient(
+                            listOf(hot.copy(alpha = .98f), amber.copy(alpha = .94f), cool.copy(alpha = .96f)),
+                            Offset(center.x - radius, center.y - radius),
+                            Offset(center.x + radius, center.y + radius)
+                        ),
+                        alpha = if (index % 2 == 0) .94f else .78f
+                    )
+                }
             }
-            drawPath(p,Brush.linearGradient(listOf(Color(0x007B4DDB),Color(0xCC9A5BFF),Color(0xAA39DFFF),Color(0x007B4DDB)),Offset(c.x-r,c.y+r),Offset(c.x+r,c.y-r)),alpha=.72f)
+
+            // Liquid center and a moving specular highlight create the glossy,
+            // heated-glass appearance of the original amber loader.
+            drawCircle(
+                Brush.radialGradient(
+                    listOf(Color(0xFFFFE7A5), amber, Color(0xFFDA6A27), Color(0xFF8D321B)),
+                    Offset(center.x - coreRadius * .24f, center.y - coreRadius * .30f),
+                    coreRadius * 1.42f
+                ),
+                coreRadius * .91f, center
+            )
+            val highlight = Offset(
+                center.x - coreRadius * (.28f + .10f * roundness),
+                center.y - coreRadius * (.34f - .08f * roundness)
+            )
+            drawCircle(
+                Brush.radialGradient(listOf(Color.White.copy(alpha = .78f), amber.copy(alpha = .28f), Color.Transparent), highlight, coreRadius * .68f),
+                coreRadius * .68f, highlight
+            )
+            drawCircle(
+                Brush.radialGradient(listOf(Color.Transparent, Color(0x447A2818)), center, radius),
+                radius, center
+            )
         }
-        // Bright liquid nucleus with a shifting off-centre highlight.
-        val core = r*(.92f + .08f*breathe)
-        drawCircle(Brush.radialGradient(listOf(Color(0xFFFFFFFF),Color(0xFFD8C7FF),Color(0xFF8756E8),Color(0xFF28134D),Color(0xFF090812)),Offset(c.x-r*.22f,c.y-r*.3f),core*1.55f),core,c)
-        val highlight=Offset(c.x-r*(.28f+.12f*wave),c.y-r*(.34f-.08f*wave))
-        drawCircle(Brush.radialGradient(listOf(Color(0xCCFFFFFF),Color(0x55FFFFFF),Color.Transparent),highlight,core*.68f),core*.68f,highlight)
-        // Tiny bright particles orbit at different radii to create depth and visible motion.
-        listOf(orbitA,orbitB+115f,orbitA*.63f+230f).forEachIndexed { index, angle ->
-            val rad=r*(1.45f+index*.16f)
-            val x=c.x+ kotlin.math.cos(Math.toRadians(angle.toDouble())).toFloat()*rad
-            val y=c.y+ kotlin.math.sin(Math.toRadians(angle.toDouble())).toFloat()*rad*.62f
-            drawCircle(if(index==1) Color(0xFFBCA0FF) else Cyan, r*.055f, Offset(x,y))
+
+        // Small hot flecks sit close to the perimeter, rather than adding the
+        // unrelated cyan/violet orbiting particles from the previous design.
+        repeat(5) { index ->
+            val angle = Math.toRadians((rotation * (if (index % 2 == 0) 1.0 else -1.0) + index * 72.0))
+            val distance = radius * (1.10f + (index % 3) * .055f)
+            val point = Offset(
+                center.x + kotlin.math.cos(angle).toFloat() * distance,
+                center.y + kotlin.math.sin(angle).toFloat() * distance
+            )
+            drawCircle(amber.copy(alpha = .72f), radius * .025f, point)
         }
     }
 }
-
 @Composable
 private fun GooeyThinkingDots(modifier: Modifier = Modifier) {
     val transition = rememberInfiniteTransition(label = "gooey-thinking")
