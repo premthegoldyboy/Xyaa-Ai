@@ -16,6 +16,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.ClickableText
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -385,35 +391,110 @@ private fun ChatPage(
     messages: List<Pair<String, Boolean>>, input: String, onInput: (String) -> Unit,
     busy: Boolean, send: (String) -> Unit, voice: () -> Unit, voiceStatus: String
 ) {
-    Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-        Heading("Conversation", "A clear space for ideas and answers")
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    LaunchedEffect(messages.size, messages.lastOrNull()?.first) {
+        if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
+    }
+    Column(Modifier.fillMaxSize().imePadding().padding(horizontal = 14.dp)) {
+        Row(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("CHAT", color = Cyan, fontSize = 9.sp, letterSpacing = 2.2.sp, fontWeight = FontWeight.Bold)
+                Text("Your space to think bigger.", color = White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+            }
+            Surface(color = Panel2, shape = CircleShape) {
+                Text(if (busy) "  ACTIVE  " else "  READY  ", color = if (busy) Cyan else Muted, fontSize = 9.sp, modifier = Modifier.padding(8.dp))
+            }
+        }
         if (messages.isEmpty()) {
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    EnergyOrb(Modifier.size(190.dp))
-                    Text("Start a conversation", color = White, fontWeight = FontWeight.SemiBold)
-                    Text("Ask a question or give XYAA a task.", color = Muted, fontSize = 12.sp)
+                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(bottom = 18.dp)) {
+                    EnergyOrb(Modifier.size(176.dp))
+                    Spacer(Modifier.height(12.dp))
+                    Text("What’s on your mind?", color = White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                    Text("Ask, create, explore — XYAA is ready.", color = Muted, fontSize = 12.sp)
                 }
             }
-        } else LazyColumn(Modifier.weight(1f).fillMaxWidth(),
-            contentPadding = PaddingValues(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            items(messages) { (text, fromUser) ->
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = if (fromUser) Arrangement.End else Arrangement.Start, verticalAlignment = Alignment.CenterVertically) {
-                    if (!fromUser && text.isBlank()) {
-                        // Quiet visual activity only: no "thinking", "speaking", or background status text.
-                        EnergyOrb(Modifier.size(52.dp), active = true)
-                        GooeyThinkingDots(Modifier.padding(start = 8.dp).size(width = 42.dp, height = 24.dp))
+        } else {
+            LazyColumn(
+                state = listState, modifier = Modifier.weight(1f).fillMaxWidth(),
+                contentPadding = PaddingValues(top = 8.dp, bottom = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(15.dp)
+            ) {
+                items(messages) { (text, fromUser) ->
+                    if (fromUser) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                            Surface(color = Color(0xFF342354), shape = RoundedCornerShape(20.dp, 20.dp, 5.dp, 20.dp),
+                                modifier = Modifier.widthIn(max = 330.dp).border(1.dp, Color(0xFF6546A0), RoundedCornerShape(20.dp,20.dp,5.dp,20.dp))) {
+                                Text(text, Modifier.padding(horizontal = 15.dp, vertical = 12.dp), color = White, fontSize = 14.sp, lineHeight = 21.sp)
+                            }
+                        }
                     } else {
-                        Surface(color = if (fromUser) Color(0xFF39245D) else Panel,
-                            shape = RoundedCornerShape(18.dp), modifier = Modifier.widthIn(max = 330.dp).border(1.dp, Line, RoundedCornerShape(18.dp))) {
-                            Text(if (fromUser) text else AssistantTextFormatter.forDisplay(text) + if (busy && !fromUser) "  ▍" else "", Modifier.padding(14.dp), color = White, fontSize = 13.sp, lineHeight = 20.sp)
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+                            Box(Modifier.padding(top = 3.dp).size(27.dp).background(Panel2, CircleShape), contentAlignment = Alignment.Center) {
+                                Text("X", color = Cyan, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
+                            }
+                            Spacer(Modifier.width(9.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text("XYAA", color = Cyan, fontSize = 9.sp, letterSpacing = 1.4.sp, fontWeight = FontWeight.Bold)
+                                Spacer(Modifier.height(5.dp))
+                                if (text.isBlank()) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        EnergyOrb(Modifier.size(35.dp), active = true)
+                                        Spacer(Modifier.width(8.dp))
+                                        GooeyThinkingDots(Modifier.size(width = 42.dp, height = 24.dp))
+                                    }
+                                } else {
+                                    Surface(color = Panel, shape = RoundedCornerShape(5.dp, 18.dp, 18.dp, 18.dp),
+                                        modifier = Modifier.fillMaxWidth().border(1.dp, Line, RoundedCornerShape(5.dp,18.dp,18.dp,18.dp))) {
+                                        val display = AssistantTextFormatter.forDisplay(text)
+                                        val visible = remember(display) { buildLinkedText(display) }
+                                        val uriHandler = LocalUriHandler.current
+                                        ClickableText(
+                                            text = visible,
+                                            modifier = Modifier.padding(horizontal = 15.dp, vertical = 13.dp),
+                                            style = TextStyle(color = White, fontSize = 14.sp, lineHeight = 22.sp),
+                                            onClick = { offset ->
+                                                visible.getStringAnnotations("URL", offset, offset).firstOrNull()?.let {
+                                                    runCatching { uriHandler.openUri(it.item) }
+                                                }
+                                            }
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }
             }
         }
-        MessageDock(input, onInput, { send(input) }, voice, !busy)
-        Spacer(Modifier.height(8.dp))
+        MessageDock(input, onInput, {
+            send(input)
+            focusManager.clearFocus()
+            keyboard?.hide()
+        }, voice, !busy)
+        Spacer(Modifier.height(6.dp))
+    }
+}
+
+private fun buildLinkedText(raw: String): AnnotatedString {
+    val urlPattern = Regex("https?://[^\\\\s<>]+", RegexOption.IGNORE_CASE)
+    return buildAnnotatedString {
+        var cursor = 0
+        urlPattern.findAll(raw).forEach { match ->
+            append(raw.substring(cursor, match.range.first))
+            val url = match.value.trimEnd('.', ',', ')', ']', ';')
+            val trailing = match.value.removePrefix(url)
+            pushStringAnnotation("URL", url)
+            pushStyle(SpanStyle(color = Cyan, textDecoration = TextDecoration.Underline, fontWeight = FontWeight.Medium))
+            append(url)
+            pop()
+            pop()
+            append(trailing)
+            cursor = match.range.last + 1
+        }
+        if (cursor < raw.length) append(raw.substring(cursor))
     }
 }
 
@@ -585,12 +666,17 @@ private fun KeyField(title:String,value:String,onValue:(String)->Unit,hint:Strin
 
 @Composable
 private fun MessageDock(value:String,onValue:(String)->Unit,send:()->Unit,voice:()->Unit,enabled:Boolean=true) {
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Panel).border(1.dp,Line,RoundedCornerShape(20.dp)).padding(5.dp),
-        verticalAlignment=Alignment.CenterVertically) {
-        OutlinedTextField(value,onValue,Modifier.weight(1f),placeholder={Text("Whisper or type a thought…",color=Muted,fontSize=12.sp)},
-            maxLines=3,shape=RoundedCornerShape(16.dp),colors=fieldColors())
-        IconButton(onClick=voice) { Icon(Icons.Default.Mic,"Voice input",tint=Cyan) }
-        IconButton(onClick=send,enabled=enabled && value.isNotBlank()) { Icon(Icons.Default.ArrowUpward,"Send",tint=White) }
+    Surface(color=Color(0xFF171329),shape=RoundedCornerShape(24.dp),modifier=Modifier.fillMaxWidth().border(1.dp,Color(0xFF51406F),RoundedCornerShape(24.dp)), shadowElevation=10.dp) {
+        Row(Modifier.padding(horizontal=7.dp, vertical=6.dp), verticalAlignment=Alignment.Bottom) {
+            OutlinedTextField(value,onValue,Modifier.weight(1f),placeholder={Text("Message XYAA…",color=Muted,fontSize=13.sp)},
+                minLines=1,maxLines=5,shape=RoundedCornerShape(18.dp),colors=fieldColors(),
+                keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Text, imeAction=androidx.compose.ui.text.input.ImeAction.Send),
+                keyboardActions=androidx.compose.foundation.text.KeyboardActions(onSend={if(enabled && value.isNotBlank()) send()}))
+            IconButton(onClick=voice,modifier=Modifier.padding(bottom=3.dp).size(42.dp)) { Icon(Icons.Default.Mic,"Voice input",tint=Cyan) }
+            IconButton(onClick=send,enabled=enabled && value.isNotBlank(),modifier=Modifier.padding(bottom=3.dp).size(42.dp).background(if(enabled && value.isNotBlank()) Violet else Panel2,CircleShape)) {
+                Icon(Icons.Default.ArrowUpward,"Send",tint=White)
+            }
+        }
     }
 }
 
