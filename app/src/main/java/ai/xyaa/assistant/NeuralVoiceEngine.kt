@@ -110,12 +110,12 @@ class NeuralVoiceEngine(private val context: Context, private val onStatus: (Str
                 chunks.forEach { chunk ->
                     if (closed) return@execute
                     val audio = active.generate(chunk, sid = VOICE_ID, speed = 1.08f)
-                    // Wait for each chunk to finish before synthesizing/playing the next.
-                    // This prevents overlapping audio and keeps long answers on Kokoro.
-                    playbackExecutor.submit { play(audio.samples, audio.sampleRate) }.get()
+                    // Publish the matching transcript as soon as synthesis completes.
+                    // Playback then begins immediately; UI text no longer lags a whole sentence.
                     if (revealed.isNotEmpty()) revealed.append(' ')
                     revealed.append(chunk)
                     if (!closed) onChunk(revealed.toString())
+                    playbackExecutor.submit { play(audio.samples, audio.sampleRate) }.get()
                 }
                 if (!closed) onComplete()
             } catch (error: Throwable) {

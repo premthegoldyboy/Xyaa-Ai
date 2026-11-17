@@ -400,9 +400,10 @@ private fun ChatPage(
             items(messages) { (text, fromUser) ->
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = if (fromUser) Arrangement.End else Arrangement.Start, verticalAlignment = Alignment.CenterVertically) {
                     if (!fromUser && text.isBlank()) {
-                        // Quiet visual activity only: no "thinking", "speaking", or background status text.
-                        EnergyOrb(Modifier.size(52.dp), active = true)
-                        GooeyThinkingDots(Modifier.padding(start = 8.dp).size(width = 42.dp, height = 24.dp))
+                        // Stable, quiet connection state; avoid a distracting animated placeholder.
+                        Surface(color = Panel, shape = RoundedCornerShape(14.dp), modifier = Modifier.border(1.dp, Line, RoundedCornerShape(14.dp))) {
+                            Text("Connecting…", Modifier.padding(horizontal = 13.dp, vertical = 9.dp), color = Muted, fontSize = 12.sp)
+                        }
                     } else {
                         Surface(color = if (fromUser) Color(0xFF39245D) else Panel,
                             shape = RoundedCornerShape(18.dp), modifier = Modifier.widthIn(max = 330.dp).border(1.dp, Line, RoundedCornerShape(18.dp))) {

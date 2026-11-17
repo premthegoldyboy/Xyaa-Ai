@@ -249,8 +249,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
      * A paced fallback is used for engines that do not emit range callbacks.
      */
     private fun speakChatAnswer(text: String, onProgress: (String) -> Unit, onComplete: () -> Unit) {
-        val engine = tts
-        if (engine == null || text.isBlank()) {
+        if (text.isBlank()) {
             onProgress(text)
             onComplete()
             return
@@ -258,80 +257,57 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         val spoken = text
             .replace(Regex("(?i)\\bX\\s*Y\\s*A\\s*A\\b"), "Zyaa")
             .replace(Regex("(?i)\\bXYAA\\b"), "Zyaa")
-        val utteranceId = "xyaa-chat-" + System.nanoTime()
         val handler = Handler(Looper.getMainLooper())
-        var sawRange = false
-        var wordIndex = 0
-        val words = text.split(Regex("\\s+")).filter { it.isNotBlank() }
-        var fallback: Runnable? = null
-        fun stopFallback() { fallback?.let(handler::removeCallbacks); fallback = null }
-        engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-            override fun onStart(id: String?) {
-                if (id != utteranceId) return
-                handler.postDelayed({
-                    if (!sawRange && wordIndex < words.size) {
-                        val starts = Regex("\\S+").findAll(text).toList()
-                        fun revealNext() {
-                            if (sawRange || wordIndex >= starts.size) return
-                            val end = starts[wordIndex].range.last + 1
-                            onProgress(text.substring(0, end))
-                            wordIndex++
-                            fallback = Runnable { revealNext() }
-                            handler.postDelayed(fallback!!, 340L)
-                        }
-                        revealNext()
-                    }
-                }, 650L)
+        val utteranceId = "xyaa-chat-" + System.nanoTime()
+        val engine = tts
+        val completed = java.util.concurrent.atomic.AtomicBoolean(false)
+        fun finish() {
+            if (completed.compareAndSet(false, true)) handler.post {
+                onProgress(text)
+                onComplete()
             }
-            override fun onRangeStart(id: String?, start: Int, end: Int, frame: Int) {
-                if (id != utteranceId) return
-                sawRange = true
-                stopFallback()
-                handler.post { onProgress(text.substring(0, end.coerceIn(0, text.length))) }
-            }
-            override fun onDone(id: String?) {
-                if (id != utteranceId) return
-                stopFallback()
-                handler.post { onProgress(text); onComplete() }
-            }
-            @Deprecated("Deprecated in Java")
-            override fun onError(id: String?) {
-                if (id != utteranceId) return
-                stopFallback()
-                handler.post { onProgress(text); onComplete() }
-            }
-            override fun onError(id: String?, errorCode: Int) = onError(id)
-        })
+        }
+        // Prefer Kokoro. Its chunk callback fires as soon as each audio chunk is ready,
+        // before playback, so the transcript never waits until an entire sentence ends.
         val neuralQueued = neuralVoice.speak(
             spoken,
-            onChunk = { spokenSoFar -> handler.post { onProgress(spokenSoFar) } },
-            onComplete = {
-                handler.post {
-                    stopFallback()
-                    onProgress(text)
-                    onComplete()
-                }
-            },
+            onChunk = { visible -> handler.post { if (!completed.get()) onProgress(visible) } },
+            onComplete = { finish() },
             fallback = {
                 handler.post {
-                    val fallbackResult = engine.speak(spoken, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
-                    if (fallbackResult == TextToSpeech.ERROR) {
-                        stopFallback()
-                        onProgress(text)
-                        onComplete()
+                    val fallbackEngine = tts
+                    if (fallbackEngine == null) finish()
+                    else {
+                        fallbackEngine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                            override fun onStart(id: String?) { if (id == utteranceId) handler.post { onProgress(text.take(1)) } }
+                            override fun onRangeStart(id: String?, start: Int, end: Int, frame: Int) {
+                                if (id == utteranceId) handler.post { onProgress(text.substring(0, end.coerceIn(0, text.length))) }
+                            }
+                            override fun onDone(id: String?) { if (id == utteranceId) finish() }
+                            @Deprecated("Deprecated in Java")
+                            override fun onError(id: String?) { if (id == utteranceId) finish() }
+                            override fun onError(id: String?, errorCode: Int) = onError(id)
+                        })
+                        if (fallbackEngine.speak(spoken, TextToSpeech.QUEUE_FLUSH, null, utteranceId) == TextToSpeech.ERROR) finish()
                     }
                 }
             }
         )
-        if (neuralQueued) {
-            stopFallback()
-            return
-        }
-        val result = engine.speak(spoken, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
-        if (result == TextToSpeech.ERROR) {
-            stopFallback()
-            onProgress(text)
-            onComplete()
+        if (!neuralQueued) {
+            if (engine == null) finish()
+            else {
+                engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                    override fun onStart(id: String?) { if (id == utteranceId) handler.post { onProgress(text.take(1)) } }
+                    override fun onRangeStart(id: String?, start: Int, end: Int, frame: Int) {
+                        if (id == utteranceId) handler.post { onProgress(text.substring(0, end.coerceIn(0, text.length))) }
+                    }
+                    override fun onDone(id: String?) { if (id == utteranceId) finish() }
+                    @Deprecated("Deprecated in Java")
+                    override fun onError(id: String?) { if (id == utteranceId) finish() }
+                    override fun onError(id: String?, errorCode: Int) = onError(id)
+                })
+                if (engine.speak(spoken, TextToSpeech.QUEUE_FLUSH, null, utteranceId) == TextToSpeech.ERROR) finish()
+            }
         }
     }
 
