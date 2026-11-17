@@ -296,8 +296,14 @@ private fun EnergyOrb(modifier: Modifier = Modifier, active: Boolean = false) {
                         close()
                     }
                     val blend = ((colorPhase + index * .115f) % 1f)
-                    val hot = Color.lerp(amber, burnt, blend)
-                    val cool = Color.lerp(burnt, Color(0xFF7A2818), blend)
+                    fun mixColor(a: Color, b: Color, t: Float) = Color(
+                        red = a.red + (b.red - a.red) * t,
+                        green = a.green + (b.green - a.green) * t,
+                        blue = a.blue + (b.blue - a.blue) * t,
+                        alpha = a.alpha + (b.alpha - a.alpha) * t
+                    )
+                    val hot = mixColor(amber, burnt, blend)
+                    val cool = mixColor(burnt, Color(0xFF7A2818), blend)
                     drawPath(
                         shape,
                         Brush.linearGradient(
