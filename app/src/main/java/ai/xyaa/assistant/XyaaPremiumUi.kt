@@ -220,96 +220,48 @@ private fun HomePage(
 
 @Composable
 private fun EnergyOrb(modifier: Modifier = Modifier, active: Boolean = false) {
-    // Native Compose adaptation of the supplied Uiverse.io orb by andrew-manzyk (MIT):
-    // clipped molten sphere, rotating polygonal flows, and continuously shifting gradients.
-    val motion = rememberInfiniteTransition(label = "xyaa-molten-orb")
-    val rotation by motion.animateFloat(
-        0f, 360f,
-        infiniteRepeatable(tween(if (active) 2400 else 7200), RepeatMode.Restart),
-        label = "molten-rotation"
-    )
-    val morph by motion.animateFloat(
-        0f, 1f, infiniteRepeatable(tween(2100), RepeatMode.Reverse),
-        label = "molten-morph"
-    )
-    val pulse by motion.animateFloat(
-        .97f, 1.035f,
-        infiniteRepeatable(tween(if (active) 850 else 1900), RepeatMode.Reverse),
-        label = "molten-pulse"
-    )
+    // A living plasma core: independent orbital ribbons, breathing nucleus and moving highlights.
+    val motion = rememberInfiniteTransition(label = "xyaa-plasma-core")
+    val orbitA by motion.animateFloat(0f, 360f, infiniteRepeatable(tween(if(active) 5200 else 11000, easing = androidx.compose.animation.core.LinearEasing), RepeatMode.Restart), label = "orbit-a")
+    val orbitB by motion.animateFloat(360f, 0f, infiniteRepeatable(tween(if(active) 3900 else 9000, easing = androidx.compose.animation.core.LinearEasing), RepeatMode.Restart), label = "orbit-b")
+    val breathe by motion.animateFloat(.91f, 1.08f, infiniteRepeatable(tween(if(active) 850 else 1800, easing = androidx.compose.animation.core.FastOutSlowInEasing), RepeatMode.Reverse), label = "breathe")
+    val wave by motion.animateFloat(0f, 1f, infiniteRepeatable(tween(2600, easing = androidx.compose.animation.core.FastOutSlowInEasing), RepeatMode.Reverse), label = "wave")
     Canvas(modifier) {
-        val center = Offset(size.width / 2f, size.height / 2f)
-        val radius = size.minDimension * .285f * pulse
-        drawCircle(
-            Brush.radialGradient(
-                listOf(Color(0x6646DFFF), Color(0x44945BFF), Color.Transparent),
-                center, radius * 2.05f
-            ),
-            radius * 2.05f, center
-        )
-        val sphere = Path().apply {
-            addOval(Rect(center.x - radius, center.y - radius, center.x + radius, center.y + radius))
-        }
-        clipPath(sphere) {
-            drawCircle(
-                Brush.radialGradient(
-                    listOf(Color(0xFFFFF8FF), Color(0xFFB9A0FF), Color(0xFF7139D8),
-                        Color(0xFF211039), Color(0xFF090812)),
-                    Offset(center.x - radius * .28f, center.y - radius * .34f),
-                    radius * 1.55f
-                ), radius, center
-            )
-            rotate(rotation, center) {
-                val drift = (morph - .5f) * radius * .34f
-                val upperFlow = Path().apply {
-                    moveTo(center.x - radius * 1.05f, center.y - radius * .10f + drift)
-                    cubicTo(center.x - radius * .82f, center.y - radius * 1.02f,
-                        center.x + radius * .12f, center.y - radius * .88f - drift,
-                        center.x + radius * .98f, center.y - radius * .35f)
-                    cubicTo(center.x + radius * .55f, center.y + radius * .02f,
-                        center.x - radius * .15f, center.y + radius * .12f + drift,
-                        center.x - radius * 1.05f, center.y - radius * .10f + drift)
-                    close()
-                }
-                val lowerFlow = Path().apply {
-                    moveTo(center.x - radius * .92f, center.y + radius * .28f)
-                    cubicTo(center.x - radius * .35f, center.y - radius * .08f - drift,
-                        center.x + radius * .40f, center.y + radius * .18f + drift,
-                        center.x + radius * 1.08f, center.y + radius * .42f)
-                    cubicTo(center.x + radius * .48f, center.y + radius * 1.05f,
-                        center.x - radius * .48f, center.y + radius * .92f,
-                        center.x - radius * .92f, center.y + radius * .28f)
-                    close()
-                }
-                val coreFlow = Path().apply {
-                    moveTo(center.x - radius * .42f, center.y - radius * .78f)
-                    cubicTo(center.x + radius * .18f, center.y - radius * .98f,
-                        center.x + radius * .86f, center.y - radius * .35f,
-                        center.x + radius * .40f, center.y + radius * .16f)
-                    cubicTo(center.x + radius * .08f, center.y + radius * .52f,
-                        center.x - radius * .56f, center.y + radius * .18f,
-                        center.x - radius * .42f, center.y - radius * .78f)
-                    close()
-                }
-                drawPath(upperFlow, Brush.linearGradient(
-                    listOf(Color(0xFF45E9FF), Color(0xFF9A55FF), Color(0xFF372064)),
-                    Offset(center.x - radius, center.y - radius), Offset(center.x + radius, center.y + radius)
-                ), alpha = .88f)
-                drawPath(lowerFlow, Brush.linearGradient(
-                    listOf(Color(0xFF281044), Color(0xFF8A42E8), Color(0xFF4BE7FF)),
-                    Offset(center.x - radius, center.y + radius), Offset(center.x + radius, center.y - radius)
-                ), alpha = .92f)
-                drawPath(coreFlow, Brush.radialGradient(
-                    listOf(Color(0xFFFFF4FF), Color(0xFFB8A0FF), Color(0xFF6B38CF), Color.Transparent),
-                    Offset(center.x + radius * .05f, center.y - radius * .18f), radius * .95f
-                ), alpha = .86f)
+        val c = Offset(size.width/2f, size.height/2f)
+        val r = size.minDimension * .245f
+        val halo = r * (2.25f + .12f*breathe)
+        drawCircle(Brush.radialGradient(listOf(Color(0x7748DFFF),Color(0x449A55FF),Color.Transparent),c,halo),halo,c)
+        drawCircle(Brush.radialGradient(listOf(Color(0x22FFFFFF),Color(0x223E9EFF),Color.Transparent),c,r*2.0f),r*2f,c)
+        // Asymmetric orbiting plasma ribbons, not a single rotating disc.
+        rotate(orbitA,c) {
+            val p=Path().apply {
+                moveTo(c.x-r*1.75f,c.y-r*.12f)
+                cubicTo(c.x-r*.9f,c.y-r*1.35f,c.x+r*.85f,c.y-r*1.25f,c.x+r*1.7f,c.y-r*.1f)
+                cubicTo(c.x+r*.72f,c.y-r*.48f,c.x-r*.55f,c.y+r*.72f,c.x-r*1.75f,c.y-r*.12f)
+                close()
             }
-            drawCircle(
-                Brush.radialGradient(
-                    listOf(Color(0x66FFFFFF), Color(0x22FFFFFF), Color.Transparent),
-                    Offset(center.x - radius * .34f, center.y - radius * .43f), radius * .56f
-                ), radius * .56f, Offset(center.x - radius * .34f, center.y - radius * .43f)
-            )
+            drawPath(p,Brush.linearGradient(listOf(Color(0x0047E8FF),Color(0xAA47E8FF),Color(0xBB9A55FF),Color(0x0047E8FF)),Offset(c.x-r*1.6f,c.y-r),Offset(c.x+r*1.6f,c.y+r)),alpha=.8f)
+        }
+        rotate(orbitB,c) {
+            val p=Path().apply {
+                moveTo(c.x-r*1.65f,c.y+r*.25f)
+                cubicTo(c.x-r*.7f,c.y-r*.95f,c.x+r*.75f,c.y-r*.85f,c.x+r*1.65f,c.y+r*.12f)
+                cubicTo(c.x+r*.4f,c.y+r*.38f,c.x-r*.55f,c.y+r*1.05f,c.x-r*1.65f,c.y+r*.25f)
+                close()
+            }
+            drawPath(p,Brush.linearGradient(listOf(Color(0x007B4DDB),Color(0xCC9A5BFF),Color(0xAA39DFFF),Color(0x007B4DDB)),Offset(c.x-r,c.y+r),Offset(c.x+r,c.y-r)),alpha=.72f)
+        }
+        // Bright liquid nucleus with a shifting off-centre highlight.
+        val core = r*(.92f + .08f*breathe)
+        drawCircle(Brush.radialGradient(listOf(Color(0xFFFFFFFF),Color(0xFFD8C7FF),Color(0xFF8756E8),Color(0xFF28134D),Color(0xFF090812)),Offset(c.x-r*.22f,c.y-r*.3f),core*1.55f),core,c)
+        val highlight=Offset(c.x-r*(.28f+.12f*wave),c.y-r*(.34f-.08f*wave))
+        drawCircle(Brush.radialGradient(listOf(Color(0xCCFFFFFF),Color(0x55FFFFFF),Color.Transparent),highlight,core*.68f),core*.68f,highlight)
+        // Tiny bright particles orbit at different radii to create depth and visible motion.
+        listOf(orbitA,orbitB+115f,orbitA*.63f+230f).forEachIndexed { index, angle ->
+            val rad=r*(1.45f+index*.16f)
+            val x=c.x+ kotlin.math.cos(Math.toRadians(angle.toDouble())).toFloat()*rad
+            val y=c.y+ kotlin.math.sin(Math.toRadians(angle.toDouble())).toFloat()*rad*.62f
+            drawCircle(if(index==1) Color(0xFFBCA0FF) else Cyan, r*.055f, Offset(x,y))
         }
     }
 }
