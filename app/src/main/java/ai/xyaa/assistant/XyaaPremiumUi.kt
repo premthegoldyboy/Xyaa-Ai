@@ -16,6 +16,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.ClickableText
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -214,96 +221,48 @@ private fun HomePage(
 
 @Composable
 private fun EnergyOrb(modifier: Modifier = Modifier, active: Boolean = false) {
-    // Native Compose adaptation of the supplied Uiverse.io orb by andrew-manzyk (MIT):
-    // clipped molten sphere, rotating polygonal flows, and continuously shifting gradients.
-    val motion = rememberInfiniteTransition(label = "xyaa-molten-orb")
-    val rotation by motion.animateFloat(
-        0f, 360f,
-        infiniteRepeatable(tween(if (active) 2400 else 7200), RepeatMode.Restart),
-        label = "molten-rotation"
-    )
-    val morph by motion.animateFloat(
-        0f, 1f, infiniteRepeatable(tween(2100), RepeatMode.Reverse),
-        label = "molten-morph"
-    )
-    val pulse by motion.animateFloat(
-        .97f, 1.035f,
-        infiniteRepeatable(tween(if (active) 850 else 1900), RepeatMode.Reverse),
-        label = "molten-pulse"
-    )
+    // A living plasma core: independent orbital ribbons, breathing nucleus and moving highlights.
+    val motion = rememberInfiniteTransition(label = "xyaa-plasma-core")
+    val orbitA by motion.animateFloat(0f, 360f, infiniteRepeatable(tween(if(active) 5200 else 11000, easing = androidx.compose.animation.core.LinearEasing), RepeatMode.Restart), label = "orbit-a")
+    val orbitB by motion.animateFloat(360f, 0f, infiniteRepeatable(tween(if(active) 3900 else 9000, easing = androidx.compose.animation.core.LinearEasing), RepeatMode.Restart), label = "orbit-b")
+    val breathe by motion.animateFloat(.91f, 1.08f, infiniteRepeatable(tween(if(active) 850 else 1800, easing = androidx.compose.animation.core.FastOutSlowInEasing), RepeatMode.Reverse), label = "breathe")
+    val wave by motion.animateFloat(0f, 1f, infiniteRepeatable(tween(2600, easing = androidx.compose.animation.core.FastOutSlowInEasing), RepeatMode.Reverse), label = "wave")
     Canvas(modifier) {
-        val center = Offset(size.width / 2f, size.height / 2f)
-        val radius = size.minDimension * .285f * pulse
-        drawCircle(
-            Brush.radialGradient(
-                listOf(Color(0x6646DFFF), Color(0x44945BFF), Color.Transparent),
-                center, radius * 2.05f
-            ),
-            radius * 2.05f, center
-        )
-        val sphere = Path().apply {
-            addOval(Rect(center.x - radius, center.y - radius, center.x + radius, center.y + radius))
-        }
-        clipPath(sphere) {
-            drawCircle(
-                Brush.radialGradient(
-                    listOf(Color(0xFFFFF8FF), Color(0xFFB9A0FF), Color(0xFF7139D8),
-                        Color(0xFF211039), Color(0xFF090812)),
-                    Offset(center.x - radius * .28f, center.y - radius * .34f),
-                    radius * 1.55f
-                ), radius, center
-            )
-            rotate(rotation, center) {
-                val drift = (morph - .5f) * radius * .34f
-                val upperFlow = Path().apply {
-                    moveTo(center.x - radius * 1.05f, center.y - radius * .10f + drift)
-                    cubicTo(center.x - radius * .82f, center.y - radius * 1.02f,
-                        center.x + radius * .12f, center.y - radius * .88f - drift,
-                        center.x + radius * .98f, center.y - radius * .35f)
-                    cubicTo(center.x + radius * .55f, center.y + radius * .02f,
-                        center.x - radius * .15f, center.y + radius * .12f + drift,
-                        center.x - radius * 1.05f, center.y - radius * .10f + drift)
-                    close()
-                }
-                val lowerFlow = Path().apply {
-                    moveTo(center.x - radius * .92f, center.y + radius * .28f)
-                    cubicTo(center.x - radius * .35f, center.y - radius * .08f - drift,
-                        center.x + radius * .40f, center.y + radius * .18f + drift,
-                        center.x + radius * 1.08f, center.y + radius * .42f)
-                    cubicTo(center.x + radius * .48f, center.y + radius * 1.05f,
-                        center.x - radius * .48f, center.y + radius * .92f,
-                        center.x - radius * .92f, center.y + radius * .28f)
-                    close()
-                }
-                val coreFlow = Path().apply {
-                    moveTo(center.x - radius * .42f, center.y - radius * .78f)
-                    cubicTo(center.x + radius * .18f, center.y - radius * .98f,
-                        center.x + radius * .86f, center.y - radius * .35f,
-                        center.x + radius * .40f, center.y + radius * .16f)
-                    cubicTo(center.x + radius * .08f, center.y + radius * .52f,
-                        center.x - radius * .56f, center.y + radius * .18f,
-                        center.x - radius * .42f, center.y - radius * .78f)
-                    close()
-                }
-                drawPath(upperFlow, Brush.linearGradient(
-                    listOf(Color(0xFF45E9FF), Color(0xFF9A55FF), Color(0xFF372064)),
-                    Offset(center.x - radius, center.y - radius), Offset(center.x + radius, center.y + radius)
-                ), alpha = .88f)
-                drawPath(lowerFlow, Brush.linearGradient(
-                    listOf(Color(0xFF281044), Color(0xFF8A42E8), Color(0xFF4BE7FF)),
-                    Offset(center.x - radius, center.y + radius), Offset(center.x + radius, center.y - radius)
-                ), alpha = .92f)
-                drawPath(coreFlow, Brush.radialGradient(
-                    listOf(Color(0xFFFFF4FF), Color(0xFFB8A0FF), Color(0xFF6B38CF), Color.Transparent),
-                    Offset(center.x + radius * .05f, center.y - radius * .18f), radius * .95f
-                ), alpha = .86f)
+        val c = Offset(size.width/2f, size.height/2f)
+        val r = size.minDimension * .245f
+        val halo = r * (2.25f + .12f*breathe)
+        drawCircle(Brush.radialGradient(listOf(Color(0x7748DFFF),Color(0x449A55FF),Color.Transparent),c,halo),halo,c)
+        drawCircle(Brush.radialGradient(listOf(Color(0x22FFFFFF),Color(0x223E9EFF),Color.Transparent),c,r*2.0f),r*2f,c)
+        // Asymmetric orbiting plasma ribbons, not a single rotating disc.
+        rotate(orbitA,c) {
+            val p=Path().apply {
+                moveTo(c.x-r*1.75f,c.y-r*.12f)
+                cubicTo(c.x-r*.9f,c.y-r*1.35f,c.x+r*.85f,c.y-r*1.25f,c.x+r*1.7f,c.y-r*.1f)
+                cubicTo(c.x+r*.72f,c.y-r*.48f,c.x-r*.55f,c.y+r*.72f,c.x-r*1.75f,c.y-r*.12f)
+                close()
             }
-            drawCircle(
-                Brush.radialGradient(
-                    listOf(Color(0x66FFFFFF), Color(0x22FFFFFF), Color.Transparent),
-                    Offset(center.x - radius * .34f, center.y - radius * .43f), radius * .56f
-                ), radius * .56f, Offset(center.x - radius * .34f, center.y - radius * .43f)
-            )
+            drawPath(p,Brush.linearGradient(listOf(Color(0x0047E8FF),Color(0xAA47E8FF),Color(0xBB9A55FF),Color(0x0047E8FF)),Offset(c.x-r*1.6f,c.y-r),Offset(c.x+r*1.6f,c.y+r)),alpha=.8f)
+        }
+        rotate(orbitB,c) {
+            val p=Path().apply {
+                moveTo(c.x-r*1.65f,c.y+r*.25f)
+                cubicTo(c.x-r*.7f,c.y-r*.95f,c.x+r*.75f,c.y-r*.85f,c.x+r*1.65f,c.y+r*.12f)
+                cubicTo(c.x+r*.4f,c.y+r*.38f,c.x-r*.55f,c.y+r*1.05f,c.x-r*1.65f,c.y+r*.25f)
+                close()
+            }
+            drawPath(p,Brush.linearGradient(listOf(Color(0x007B4DDB),Color(0xCC9A5BFF),Color(0xAA39DFFF),Color(0x007B4DDB)),Offset(c.x-r,c.y+r),Offset(c.x+r,c.y-r)),alpha=.72f)
+        }
+        // Bright liquid nucleus with a shifting off-centre highlight.
+        val core = r*(.92f + .08f*breathe)
+        drawCircle(Brush.radialGradient(listOf(Color(0xFFFFFFFF),Color(0xFFD8C7FF),Color(0xFF8756E8),Color(0xFF28134D),Color(0xFF090812)),Offset(c.x-r*.22f,c.y-r*.3f),core*1.55f),core,c)
+        val highlight=Offset(c.x-r*(.28f+.12f*wave),c.y-r*(.34f-.08f*wave))
+        drawCircle(Brush.radialGradient(listOf(Color(0xCCFFFFFF),Color(0x55FFFFFF),Color.Transparent),highlight,core*.68f),core*.68f,highlight)
+        // Tiny bright particles orbit at different radii to create depth and visible motion.
+        listOf(orbitA,orbitB+115f,orbitA*.63f+230f).forEachIndexed { index, angle ->
+            val rad=r*(1.45f+index*.16f)
+            val x=c.x+ kotlin.math.cos(Math.toRadians(angle.toDouble())).toFloat()*rad
+            val y=c.y+ kotlin.math.sin(Math.toRadians(angle.toDouble())).toFloat()*rad*.62f
+            drawCircle(if(index==1) Color(0xFFBCA0FF) else Cyan, r*.055f, Offset(x,y))
         }
     }
 }
@@ -385,35 +344,110 @@ private fun ChatPage(
     messages: List<Pair<String, Boolean>>, input: String, onInput: (String) -> Unit,
     busy: Boolean, send: (String) -> Unit, voice: () -> Unit, voiceStatus: String
 ) {
-    Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-        Heading("Conversation", "A clear space for ideas and answers")
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    LaunchedEffect(messages.size, messages.lastOrNull()?.first) {
+        if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
+    }
+    Column(Modifier.fillMaxSize().imePadding().padding(horizontal = 14.dp)) {
+        Row(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("CHAT", color = Cyan, fontSize = 9.sp, letterSpacing = 2.2.sp, fontWeight = FontWeight.Bold)
+                Text("Your space to think bigger.", color = White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+            }
+            Surface(color = Panel2, shape = CircleShape) {
+                Text(if (busy) "  ACTIVE  " else "  READY  ", color = if (busy) Cyan else Muted, fontSize = 9.sp, modifier = Modifier.padding(8.dp))
+            }
+        }
         if (messages.isEmpty()) {
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    EnergyOrb(Modifier.size(190.dp))
-                    Text("Start a conversation", color = White, fontWeight = FontWeight.SemiBold)
-                    Text("Ask a question or give XYAA a task.", color = Muted, fontSize = 12.sp)
+                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(bottom = 18.dp)) {
+                    EnergyOrb(Modifier.size(176.dp))
+                    Spacer(Modifier.height(12.dp))
+                    Text("What’s on your mind?", color = White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                    Text("Ask, create, explore — XYAA is ready.", color = Muted, fontSize = 12.sp)
                 }
             }
-        } else LazyColumn(Modifier.weight(1f).fillMaxWidth(),
-            contentPadding = PaddingValues(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            items(messages) { (text, fromUser) ->
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = if (fromUser) Arrangement.End else Arrangement.Start, verticalAlignment = Alignment.CenterVertically) {
-                    if (!fromUser && text.isBlank()) {
-                        // Quiet visual activity only: no "thinking", "speaking", or background status text.
-                        EnergyOrb(Modifier.size(52.dp), active = true)
-                        GooeyThinkingDots(Modifier.padding(start = 8.dp).size(width = 42.dp, height = 24.dp))
+        } else {
+            LazyColumn(
+                state = listState, modifier = Modifier.weight(1f).fillMaxWidth(),
+                contentPadding = PaddingValues(top = 8.dp, bottom = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(15.dp)
+            ) {
+                items(messages) { (text, fromUser) ->
+                    if (fromUser) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                            Surface(color = Color(0xFF342354), shape = RoundedCornerShape(20.dp, 20.dp, 5.dp, 20.dp),
+                                modifier = Modifier.widthIn(max = 330.dp).border(1.dp, Color(0xFF6546A0), RoundedCornerShape(20.dp,20.dp,5.dp,20.dp))) {
+                                Text(text, Modifier.padding(horizontal = 15.dp, vertical = 12.dp), color = White, fontSize = 14.sp, lineHeight = 21.sp)
+                            }
+                        }
                     } else {
-                        Surface(color = if (fromUser) Color(0xFF39245D) else Panel,
-                            shape = RoundedCornerShape(18.dp), modifier = Modifier.widthIn(max = 330.dp).border(1.dp, Line, RoundedCornerShape(18.dp))) {
-                            Text(if (fromUser) text else AssistantTextFormatter.forDisplay(text) + if (busy && !fromUser) "  ▍" else "", Modifier.padding(14.dp), color = White, fontSize = 13.sp, lineHeight = 20.sp)
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+                            Box(Modifier.padding(top = 3.dp).size(27.dp).background(Panel2, CircleShape), contentAlignment = Alignment.Center) {
+                                Text("X", color = Cyan, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
+                            }
+                            Spacer(Modifier.width(9.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text("XYAA", color = Cyan, fontSize = 9.sp, letterSpacing = 1.4.sp, fontWeight = FontWeight.Bold)
+                                Spacer(Modifier.height(5.dp))
+                                if (text.isBlank()) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        EnergyOrb(Modifier.size(35.dp), active = true)
+                                        Spacer(Modifier.width(8.dp))
+                                        GooeyThinkingDots(Modifier.size(width = 42.dp, height = 24.dp))
+                                    }
+                                } else {
+                                    Surface(color = Panel, shape = RoundedCornerShape(5.dp, 18.dp, 18.dp, 18.dp),
+                                        modifier = Modifier.fillMaxWidth().border(1.dp, Line, RoundedCornerShape(5.dp,18.dp,18.dp,18.dp))) {
+                                        val display = AssistantTextFormatter.forDisplay(text)
+                                        val visible = remember(display) { buildLinkedText(display) }
+                                        val uriHandler = LocalUriHandler.current
+                                        ClickableText(
+                                            text = visible,
+                                            modifier = Modifier.padding(horizontal = 15.dp, vertical = 13.dp),
+                                            style = TextStyle(color = White, fontSize = 14.sp, lineHeight = 22.sp),
+                                            onClick = { offset ->
+                                                visible.getStringAnnotations("URL", offset, offset).firstOrNull()?.let {
+                                                    runCatching { uriHandler.openUri(it.item) }
+                                                }
+                                            }
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }
             }
         }
-        MessageDock(input, onInput, { send(input) }, voice, !busy)
-        Spacer(Modifier.height(8.dp))
+        MessageDock(input, onInput, {
+            send(input)
+            focusManager.clearFocus()
+            keyboard?.hide()
+        }, voice, !busy)
+        Spacer(Modifier.height(6.dp))
+    }
+}
+
+private fun buildLinkedText(raw: String): AnnotatedString {
+    val urlPattern = Regex("https?://[^\\\\s<>]+", RegexOption.IGNORE_CASE)
+    return buildAnnotatedString {
+        var cursor = 0
+        urlPattern.findAll(raw).forEach { match ->
+            append(raw.substring(cursor, match.range.first))
+            val url = match.value.trimEnd('.', ',', ')', ']', ';')
+            val trailing = match.value.removePrefix(url)
+            pushStringAnnotation("URL", url)
+            pushStyle(SpanStyle(color = Cyan, textDecoration = TextDecoration.Underline, fontWeight = FontWeight.Medium))
+            append(url)
+            pop()
+            pop()
+            append(trailing)
+            cursor = match.range.last + 1
+        }
+        if (cursor < raw.length) append(raw.substring(cursor))
     }
 }
 
@@ -585,12 +619,17 @@ private fun KeyField(title:String,value:String,onValue:(String)->Unit,hint:Strin
 
 @Composable
 private fun MessageDock(value:String,onValue:(String)->Unit,send:()->Unit,voice:()->Unit,enabled:Boolean=true) {
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Panel).border(1.dp,Line,RoundedCornerShape(20.dp)).padding(5.dp),
-        verticalAlignment=Alignment.CenterVertically) {
-        OutlinedTextField(value,onValue,Modifier.weight(1f),placeholder={Text("Whisper or type a thought…",color=Muted,fontSize=12.sp)},
-            maxLines=3,shape=RoundedCornerShape(16.dp),colors=fieldColors())
-        IconButton(onClick=voice) { Icon(Icons.Default.Mic,"Voice input",tint=Cyan) }
-        IconButton(onClick=send,enabled=enabled && value.isNotBlank()) { Icon(Icons.Default.ArrowUpward,"Send",tint=White) }
+    Surface(color=Color(0xFF171329),shape=RoundedCornerShape(24.dp),modifier=Modifier.fillMaxWidth().border(1.dp,Color(0xFF51406F),RoundedCornerShape(24.dp)), shadowElevation=10.dp) {
+        Row(Modifier.padding(horizontal=7.dp, vertical=6.dp), verticalAlignment=Alignment.Bottom) {
+            OutlinedTextField(value,onValue,Modifier.weight(1f),placeholder={Text("Message XYAA…",color=Muted,fontSize=13.sp)},
+                minLines=1,maxLines=5,shape=RoundedCornerShape(18.dp),colors=fieldColors(),
+                keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Text, imeAction=androidx.compose.ui.text.input.ImeAction.Send),
+                keyboardActions=androidx.compose.foundation.text.KeyboardActions(onSend={if(enabled && value.isNotBlank()) send()}))
+            IconButton(onClick=voice,modifier=Modifier.padding(bottom=3.dp).size(42.dp)) { Icon(Icons.Default.Mic,"Voice input",tint=Cyan) }
+            IconButton(onClick=send,enabled=enabled && value.isNotBlank(),modifier=Modifier.padding(bottom=3.dp).size(42.dp).background(if(enabled && value.isNotBlank()) Violet else Panel2,CircleShape)) {
+                Icon(Icons.Default.ArrowUpward,"Send",tint=White)
+            }
+        }
     }
 }
 
