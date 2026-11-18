@@ -25,6 +25,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -191,7 +192,7 @@ internal fun XyaaPremiumApp(
                         { submit(it) }, { tab = "Research" }, { tab = "Chat" })
                     "Live Voice" -> LiveVoicePage(liveVoiceActive, liveVoiceStatus, liveTranscript,
                         onStartLiveVoice, onStopLiveVoice, { tab = "Chat"; onVoice() })
-                    "Chat" -> ChatPage(messages, input, { input = it }, busy, { submit(it) }, onVoice, voiceInputStatus)
+                    "Chat" -> ChatPage(messages, input, { input = it }, busy, { submit(it) }, onVoice, voiceInputStatus, { messages = emptyList() })
                     "Research" -> ResearchPage(researchQuery, { researchQuery = it }, busy,
                         { q -> researchQuery = q; tab = "Research"; submit("Research $q") }, messages, onShareReport)
                     "Skills" -> SkillsPage { command ->
@@ -344,76 +345,165 @@ private fun LiveVoicePage(
 @Composable
 private fun ChatPage(
     messages: List<Pair<String, Boolean>>, input: String, onInput: (String) -> Unit,
-    busy: Boolean, send: (String) -> Unit, voice: () -> Unit, voiceStatus: String
+    busy: Boolean, send: (String) -> Unit, voice: () -> Unit, voiceStatus: String,
+    clearChat: () -> Unit
 ) {
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    val clipboard = LocalClipboardManager.current
     val imeOpen = WindowInsets.ime.getBottom(LocalDensity.current) > 0
-    // Animate only when a message is added; streaming text updates snap so the list never fights itself.
+    val lastUserPrompt = messages.lastOrNull { it.second }?.first.orEmpty()
+
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
     }
-    LaunchedEffect(messages.lastOrNull()?.first) {
+    LaunchedEffect(messages.lastOrNull()?.first, imeOpen) {
         if (messages.isNotEmpty()) listState.scrollToItem(messages.lastIndex)
     }
-    // Keep the newest message in view when the keyboard opens and shrinks the list.
-    LaunchedEffect(imeOpen) {
-        if (messages.isNotEmpty()) listState.scrollToItem(messages.lastIndex)
-    }
+
     Column(Modifier.fillMaxSize().padding(horizontal = 14.dp)) {
-        Row(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Column(Modifier.weight(1f)) {
-                Text("CHAT", color = Cyan, fontSize = 9.sp, letterSpacing = 2.2.sp, fontWeight = FontWeight.Bold)
-                Text("Your space to think bigger.", color = White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                Text("YOUR CONVERSATION", color = Cyan, fontSize = 9.sp, letterSpacing = 2.sp, fontWeight = FontWeight.Bold)
+                Text("Chat with XYAA", color = White, fontSize = 21.sp, fontWeight = FontWeight.Bold)
+                Text(if (busy) "Working on your request…" else "Ask anything. Build something useful.",
+                    color = Muted, fontSize = 11.sp)
             }
-            Surface(color = Panel2, shape = CircleShape) {
-                Text(if (busy) "  ACTIVE  " else "  READY  ", color = if (busy) Cyan else Muted, fontSize = 9.sp, modifier = Modifier.padding(8.dp))
+            Surface(
+                color = if (busy) Color(0xFF16313A) else Panel2,
+                shape = RoundedCornerShape(30.dp),
+                modifier = Modifier.padding(end = 4.dp)
+            ) {
+                Row(Modifier.padding(horizontal = 10.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(6.dp).background(if (busy) Cyan else Color(0xFF73D6A1), CircleShape))
+                    Spacer(Modifier.width(6.dp))
+                    Text(if (busy) "ACTIVE" else "READY", color = if (busy) Cyan else Muted,
+                        fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                }
+            }
+            if (messages.isNotEmpty()) {
+                IconButton(onClick = clearChat, enabled = !busy, modifier = Modifier.size(36.dp)) {
+                    Icon(Icons.Default.DeleteOutline, "Clear visible chat", tint = Muted, modifier = Modifier.size(19.dp))
+                }
             }
         }
+
         if (messages.isEmpty()) {
-            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(bottom = 18.dp)) {
-                    EnergyOrb(Modifier.size(176.dp))
-                    Spacer(Modifier.height(12.dp))
-                    Text("What’s on your mind?", color = White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-                    Text("Ask, create, explore — XYAA is ready.", color = Muted, fontSize = 12.sp)
+            Column(
+                Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(top = 10.dp, bottom = 18.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Box(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(26.dp))
+                        .background(Brush.linearGradient(listOf(Color(0xFF21163C), Color(0xFF101B2D))))
+                        .border(1.dp, Line.copy(alpha = .8f), RoundedCornerShape(26.dp))
+                        .padding(vertical = 18.dp, horizontal = 16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        EnergyOrb(Modifier.size(142.dp))
+                        Text("A clearer way to get things done.", color = White, fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                        Spacer(Modifier.height(5.dp))
+                        Text("Ask a question, create a document, research a topic or control your device.",
+                            color = Muted, fontSize = 11.sp, lineHeight = 16.sp,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                    }
+                }
+                Spacer(Modifier.height(18.dp))
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("TRY ASKING", color = Cyan, fontSize = 9.sp, letterSpacing = 1.7.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.weight(1f))
+                    Text("Tap a prompt to start", color = Muted, fontSize = 9.sp)
+                }
+                Spacer(Modifier.height(9.dp))
+                val suggestions = listOf(
+                    Triple(Icons.Default.Lightbulb, "Explain a concept", "Explain quantum computing in simple terms"),
+                    Triple(Icons.Default.Description, "Create a PDF", "Create a detailed PDF about renewable energy"),
+                    Triple(Icons.Default.Search, "Research a topic", "Research the latest advances in space exploration"),
+                    Triple(Icons.Default.Checklist, "Plan my day", "Help me make a realistic plan for today")
+                )
+                suggestions.forEach { (icon, title, prompt) ->
+                    Surface(
+                        color = Panel, shape = RoundedCornerShape(15.dp),
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                            .border(1.dp, Line, RoundedCornerShape(15.dp))
+                            .clickable(enabled = !busy) { send(prompt) }
+                    ) {
+                        Row(Modifier.padding(horizontal = 13.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.size(34.dp).background(Panel2, RoundedCornerShape(11.dp)), contentAlignment = Alignment.Center) {
+                                Icon(icon, null, tint = Cyan, modifier = Modifier.size(18.dp))
+                            }
+                            Spacer(Modifier.width(11.dp))
+                            Text(title, color = White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.weight(1f))
+                            Icon(Icons.Default.ArrowOutward, null, tint = Muted, modifier = Modifier.size(16.dp))
+                        }
+                    }
                 }
             }
         } else {
             LazyColumn(
-                state = listState, modifier = Modifier.weight(1f).fillMaxWidth(),
-                contentPadding = PaddingValues(top = 8.dp, bottom = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(15.dp)
+                state = listState,
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                contentPadding = PaddingValues(top = 8.dp, bottom = 18.dp),
+                verticalArrangement = Arrangement.spacedBy(18.dp)
             ) {
                 items(messages) { (text, fromUser) ->
                     if (fromUser) {
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                            Surface(color = Color(0xFF342354), shape = RoundedCornerShape(20.dp, 20.dp, 5.dp, 20.dp),
-                                modifier = Modifier.widthIn(max = 330.dp).border(1.dp, Color(0xFF6546A0), RoundedCornerShape(20.dp,20.dp,5.dp,20.dp))) {
-                                Text(text, Modifier.padding(horizontal = 15.dp, vertical = 12.dp), color = White, fontSize = 14.sp, lineHeight = 21.sp)
+                        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End) {
+                            Surface(
+                                color = Color(0xFF342354),
+                                shape = RoundedCornerShape(20.dp, 20.dp, 5.dp, 20.dp),
+                                modifier = Modifier.widthIn(max = 330.dp)
+                                    .border(1.dp, Color(0xFF6546A0), RoundedCornerShape(20.dp,20.dp,5.dp,20.dp))
+                            ) {
+                                Text(text, Modifier.padding(horizontal = 15.dp, vertical = 12.dp),
+                                    color = White, fontSize = 14.sp, lineHeight = 21.sp)
                             }
+                            Text("YOU", color = Muted, fontSize = 8.sp, letterSpacing = 1.2.sp,
+                                modifier = Modifier.padding(top = 5.dp, end = 5.dp))
                         }
                     } else {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
-                            Box(Modifier.padding(top = 3.dp).size(27.dp).background(Panel2, CircleShape), contentAlignment = Alignment.Center) {
-                                Text("X", color = Cyan, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
+                            Box(
+                                Modifier.padding(top = 2.dp).size(30.dp)
+                                    .background(Brush.linearGradient(listOf(Violet, Color(0xFF286E8C))), CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("X", color = White, fontSize = 13.sp, fontWeight = FontWeight.Black)
                             }
                             Spacer(Modifier.width(9.dp))
                             Column(Modifier.weight(1f)) {
-                                Text("XYAA", color = Cyan, fontSize = 9.sp, letterSpacing = 1.4.sp, fontWeight = FontWeight.Bold)
-                                Spacer(Modifier.height(5.dp))
-                                if (text.isBlank() || text == "Connecting…" || text == "Thinking…" || text == "Speaking…") {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text("XYAA", color = Cyan, fontSize = 9.sp, letterSpacing = 1.4.sp,
+                                        fontWeight = FontWeight.Bold)
+                                    Spacer(Modifier.width(7.dp))
+                                    Text("·", color = Muted, fontSize = 11.sp)
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("ASSISTANT", color = Muted, fontSize = 8.sp, letterSpacing = 1.sp)
+                                }
+                                Spacer(Modifier.height(6.dp))
+                                if (text.isBlank() || text == "Connecting…" || text == "Thinking…" ||
+                                    text == "Speaking…" || text == "Preparing your PDF…") {
                                     XyaaLoadingIndicator()
                                 } else {
-                                    Surface(color = Panel, shape = RoundedCornerShape(5.dp, 18.dp, 18.dp, 18.dp),
-                                        modifier = Modifier.fillMaxWidth().border(1.dp, Line, RoundedCornerShape(5.dp,18.dp,18.dp,18.dp))) {
+                                    Surface(
+                                        color = Panel,
+                                        shape = RoundedCornerShape(5.dp, 18.dp, 18.dp, 18.dp),
+                                        modifier = Modifier.fillMaxWidth().border(1.dp, Line,
+                                            RoundedCornerShape(5.dp,18.dp,18.dp,18.dp))
+                                    ) {
                                         val display = AssistantTextFormatter.forDisplay(text)
                                         val visible = remember(display) { buildLinkedText(display) }
                                         val uriHandler = LocalUriHandler.current
                                         ClickableText(
                                             text = visible,
-                                            modifier = Modifier.padding(horizontal = 15.dp, vertical = 13.dp),
+                                            modifier = Modifier.padding(horizontal = 15.dp, vertical = 14.dp),
                                             style = TextStyle(color = White, fontSize = 14.sp, lineHeight = 22.sp),
                                             onClick = { offset ->
                                                 visible.getStringAnnotations("URL", offset, offset).firstOrNull()?.let {
@@ -422,12 +512,40 @@ private fun ChatPage(
                                             }
                                         )
                                     }
+                                    Row(
+                                        Modifier.fillMaxWidth().padding(top = 3.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        TextButton(
+                                            onClick = { clipboard.setText(AnnotatedString(AssistantTextFormatter.forDisplay(text))) },
+                                            contentPadding = PaddingValues(horizontal = 7.dp, vertical = 3.dp)
+                                        ) {
+                                            Icon(Icons.Default.ContentCopy, null, tint = Muted, modifier = Modifier.size(13.dp))
+                                            Spacer(Modifier.width(4.dp))
+                                            Text("Copy", color = Muted, fontSize = 10.sp)
+                                        }
+                                        if (text == messages.lastOrNull { !it.second }?.first && lastUserPrompt.isNotBlank()) {
+                                            TextButton(
+                                                onClick = { send(lastUserPrompt) },
+                                                enabled = !busy,
+                                                contentPadding = PaddingValues(horizontal = 7.dp, vertical = 3.dp)
+                                            ) {
+                                                Icon(Icons.Default.Replay, null, tint = Muted, modifier = Modifier.size(13.dp))
+                                                Spacer(Modifier.width(4.dp))
+                                                Text("Ask again", color = Muted, fontSize = 10.sp)
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
                 }
             }
+        }
+
+        if (voiceStatus.isNotBlank()) {
+            Text(voiceStatus, color = Cyan, fontSize = 10.sp, modifier = Modifier.padding(start = 7.dp, bottom = 5.dp))
         }
         MessageDock(input, onInput, {
             send(input)
