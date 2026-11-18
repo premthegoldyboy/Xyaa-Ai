@@ -230,18 +230,17 @@ internal fun MoltenOrb(modifier: Modifier = Modifier, active: Boolean = false) {
         var last = 0L
         var tau = 0f
         while (true) {
-            androidx.compose.runtime.withFrameNanos { now ->
-                if (last == 0L) last = now
-                val dt = now - last
-                if (dt >= FRAME_NANOS) {
-                    last = now
-                    tau = (tau + dt / 1_000_000_000f * (if (active) 1.35f else 1f)) % (MoltenSpec.PERIOD * 3f)
-                    // The pixel field is CPU-heavy; keep it off the Compose/UI thread.
-                    withContext(Dispatchers.Default) { field.render(tau, pixels) }
-                    bitmap.setPixels(pixels, 0, MOLTEN_GRID, 0, 0, MOLTEN_GRID, MOLTEN_GRID)
-                    hueDeg = MoltenSpec.hueDegrees(tau)
-                    version++
-                }
+            val now = androidx.compose.runtime.withFrameNanos { it }
+            if (last == 0L) last = now
+            val dt = now - last
+            if (dt >= FRAME_NANOS) {
+                last = now
+                tau = (tau + dt / 1_000_000_000f * (if (active) 1.35f else 1f)) % (MoltenSpec.PERIOD * 3f)
+                // The pixel field is CPU-heavy; keep it off the Compose/UI thread.
+                withContext(Dispatchers.Default) { field.render(tau, pixels) }
+                bitmap.setPixels(pixels, 0, MOLTEN_GRID, 0, 0, MOLTEN_GRID, MOLTEN_GRID)
+                hueDeg = MoltenSpec.hueDegrees(tau)
+                version++
             }
         }
     }
