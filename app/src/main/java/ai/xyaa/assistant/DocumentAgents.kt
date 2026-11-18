@@ -9,7 +9,7 @@ object PdfAgent {
             RegexOption.IGNORE_CASE).containsMatchIn(prompt)
 
     fun needsResearch(prompt: String): Boolean =
-        Regex("\\b(complete|full|detailed|comprehensive)\\s+(?:technical\\s+)?(?:specifications?|specs?)\\b|\\b(specifications?|specs?)\\s+(?:of|for)\\b|\\b(price|availability|release date|dimensions|battery capacity|processor|camera specifications)\\b",
+        Regex("\\b(complete|full|detailed|comprehensive)\\s+(?:technical\\s+)?spe.{1,4}fic\\w*|\\bspe.{1,4}fic\\w*\\s+(?:of|for)\\b|\\b(price|availability|release date|dimensions|battery capacity|processor|camera specifications)\\b",
             RegexOption.IGNORE_CASE).containsMatchIn(prompt)
 
     fun contentPrompt(prompt: String): String = """
