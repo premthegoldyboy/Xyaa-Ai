@@ -1,8 +1,12 @@
 package ai.xyaa.assistant
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateContentSize
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
@@ -517,17 +521,29 @@ private fun ChatPage(
                                     text == "Speaking…" || text == "Preparing your PDF…") {
                                     XyaaLoadingIndicator()
                                 } else {
-                                    Surface(
-                                        color = Panel,
-                                        shape = RoundedCornerShape(5.dp, 18.dp, 18.dp, 18.dp),
-                                        modifier = Modifier.fillMaxWidth().border(1.dp, Line,
-                                            RoundedCornerShape(5.dp,18.dp,18.dp,18.dp))
+                                    AnimatedVisibility(
+                                        visible = true,
+                                        enter = fadeIn(animationSpec = tween(220)) +
+                                            slideInVertically(
+                                                initialOffsetY = { it / 10 },
+                                                animationSpec = tween(220)
+                                            )
                                     ) {
-                                        val display = AssistantTextFormatter.forRichDisplay(text)
-                                        MarkdownMessage(
-                                            raw = display,
-                                            modifier = Modifier.padding(horizontal = 15.dp, vertical = 14.dp)
-                                        )
+                                        Surface(
+                                            color = Panel,
+                                            shape = RoundedCornerShape(5.dp, 18.dp, 18.dp, 18.dp),
+                                            modifier = Modifier.fillMaxWidth()
+                                                // Speech callbacks add words progressively; animate the
+                                                // bubble's height so each new phrase settles smoothly.
+                                                .animateContentSize(animationSpec = tween(110))
+                                                .border(1.dp, Line, RoundedCornerShape(5.dp,18.dp,18.dp,18.dp))
+                                        ) {
+                                            val display = AssistantTextFormatter.forRichDisplay(text)
+                                            MarkdownMessage(
+                                                raw = display,
+                                                modifier = Modifier.padding(horizontal = 15.dp, vertical = 14.dp)
+                                            )
+                                        }
                                     }
                                     Row(
                                         Modifier.fillMaxWidth().padding(top = 3.dp),
