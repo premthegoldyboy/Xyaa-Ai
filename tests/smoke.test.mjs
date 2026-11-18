@@ -83,3 +83,13 @@ test('chat keeps streamed replies anchored at the bottom and avoids repetitive i
   assert.match(ui, /scrollToItem\(messages\.lastIndex, scrollOffset = Int\.MAX_VALUE\)/);
   assert.match(activity, /Do not introduce yourself, repeat your name, or begin routine replies/);
 });
+
+
+test('Molten orb uses a continuous glossy liquid surface instead of polygon fragments', () => {
+  const orb = readFileSync(new URL('../app/src/main/java/ai/xyaa/assistant/MoltenOrb.kt', import.meta.url), 'utf8');
+  assert.match(orb, /continuous liquid-glass body/);
+  assert.match(orb, /Broad glass reflection/);
+  assert.match(orb, /private const val MOLTEN_GRID = 128/);
+  assert.match(orb, /FilterQuality.Medium/);
+  assert.doesNotMatch(orb, /union of blurred polygons/);
+});
