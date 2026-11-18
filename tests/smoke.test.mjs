@@ -80,7 +80,10 @@ test('Android chat renders structured Markdown and selectable code blocks', () =
 test('chat keeps streamed replies anchored at the bottom and avoids repetitive identity intros', () => {
   const ui = readFileSync(new URL('../app/src/main/java/ai/xyaa/assistant/XyaaPremiumUi.kt', import.meta.url), 'utf8');
   const activity = readFileSync(new URL('../app/src/main/java/ai/xyaa/assistant/MainActivity.kt', import.meta.url), 'utf8');
-  assert.match(ui, /scrollToItem\(messages\.lastIndex, scrollOffset = Int\.MAX_VALUE\)/);
+  assert.match(ui, /snapshotFlow \{/);
+  assert.match(ui, /last\.offset \+ last\.size - layout\.viewportEndOffset/);
+  assert.match(ui, /if \(messages\.isNotEmpty\(\) && followOutput\)/);
+  assert.doesNotMatch(ui, /scrollToItem\(messages\.lastIndex, scrollOffset = Int\.MAX_VALUE\)/);
   assert.match(activity, /Do not introduce yourself, repeat your name, or begin routine replies/);
 });
 
