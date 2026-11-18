@@ -19,7 +19,9 @@ import android.speech.tts.UtteranceProgressListener
 import android.os.Handler
 import android.os.Looper
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.core.content.ContextCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -86,6 +88,11 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         neuralVoice = NeuralVoiceEngine(this) { status -> runOnUiThread { neuralVoiceStatus.value = status } }
         neuralVoice.initializeIfInstalled()
         tts = TextToSpeech(this, this)
+        // Edge-to-edge on every API level so Compose receives real system-bar and IME insets (one source of truth).
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+        )
         setContent {
             XyaaPremiumApp(
                 onSend = { prompt, answer -> process(prompt, answer) },
@@ -146,6 +153,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     }
 
     private fun startLiveVoice() {
+        stopSpeech() // never let the speaker talk into the live session's microphone
         if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO), 47)
             liveVoiceStatus.value = "Allow microphone access to start live voice."
@@ -229,145 +237,183 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         else engine.language = Locale("en", "IN")
         engine.setSpeechRate(0.91f)
         engine.setPitch(1.02f)
+        engine.setOnUtteranceProgressListener(deviceVoiceListener)
+        deviceVoiceReady = true
     }
 
-    private fun say(text: String) {
-        val spoken = AssistantTextFormatter.forDisplay(text)
-            .replace(Regex("(?i)\\bX\\s*Y\\s*A\\s*A\\b"), "Zyaa")
-            .replace(Regex("(?i)\\bXYAA\\b"), "Zyaa")
-        val neuralQueued = neuralVoice.speak(spoken) {
-            runOnUiThread { tts?.speak(spoken, TextToSpeech.QUEUE_FLUSH, null, "xyaa-response") }
+    // ---- Speech -------------------------------------------------------------------------------
+    // One path for everything XYAA says. The text is cleaned once (AssistantTextFormatter.forSpeech) and the
+    // same transcript is handed to Kokoro, or to Android TTS if Kokoro is missing or fails. Exactly one
+    // engine speaks at a time, a newer request supersedes the older one, and every session completes once.
+
+    private val speechHandler = Handler(Looper.getMainLooper())
+    private var speechSession: SpeechSession? = null // main thread only
+    @Volatile private var deviceVoiceReady = false
+
+    private inner class SpeechSession(
+        val plan: AssistantTextFormatter.SpeechPlan,
+        val onProgress: (String) -> Unit,
+        val onComplete: () -> Unit
+    ) {
+        val idPrefix = "xyaa-" + System.nanoTime() + "-"
+        var done = false
+        var lastPartId = ""
+        var sawRange = false
+        val partOffsets = HashMap<String, Int>()
+        var ticker: Runnable? = null
+        var tickWord = 0
+
+        fun owns(id: String?) = id != null && id.startsWith(idPrefix)
+        fun cancelTicker() { ticker?.let(speechHandler::removeCallbacks); ticker = null }
+        fun progress(visible: String) {
+            if (!done && speechSession === this && visible.isNotBlank()) onProgress(visible)
         }
-        if (!neuralQueued) {
-            tts?.speak(spoken, TextToSpeech.QUEUE_FLUSH, null, "xyaa-response")
+        fun finish() {
+            if (done) return
+            done = true
+            cancelTicker()
+            if (speechSession === this) speechSession = null
+            onProgress(plan.display)
+            onComplete()
         }
     }
 
-    /**
-     * Chat answers are spoken only after the provider has finished generating.
-     * Android TTS range callbacks reveal the same characters currently being spoken.
-     * A paced fallback is used for engines that do not emit range callbacks.
-     */
-    private fun speakChatAnswer(text: String, onProgress: (String) -> Unit, onComplete: () -> Unit) {
-        val speechText = AssistantTextFormatter.forDisplay(text)
-        if (speechText.isBlank()) {
-            onProgress(speechText)
+    /** Stops whatever is being spoken. The interrupted session still completes once, with its full text. */
+    private fun stopSpeech(completeInterrupted: Boolean = true) {
+        val session = speechSession
+        speechSession = null
+        runCatching { neuralVoice.stop() }
+        runCatching { tts?.stop() }
+        session?.cancelTicker()
+        if (session != null && !session.done) {
+            if (completeInterrupted) { speechSession = session; session.finish() } else session.done = true
+        }
+    }
+
+    private fun say(text: String) = speak(text)
+
+    private fun speakChatAnswer(text: String, onProgress: (String) -> Unit, onComplete: () -> Unit) =
+        speak(text, onProgress, onComplete)
+
+    private fun speak(text: String, onProgress: (String) -> Unit = {}, onComplete: () -> Unit = {}) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            speechHandler.post { speak(text, onProgress, onComplete) }
+            return
+        }
+        val plan = AssistantTextFormatter.forSpeech(text)
+        stopSpeech()
+        if (plan.isSilent) {
+            onProgress(plan.display)
             onComplete()
             return
         }
-        val spoken = speechText
-            .replace(Regex("(?i)\\bX\\s*Y\\s*A\\s*A\\b"), "Zyaa")
-            .replace(Regex("(?i)\\bXYAA\\b"), "Zyaa")
-        val handler = Handler(Looper.getMainLooper())
-        val utteranceId = "xyaa-chat-" + System.nanoTime()
-        val completed = java.util.concurrent.atomic.AtomicBoolean(false)
-        fun finish() {
-            if (completed.compareAndSet(false, true)) handler.post {
-                onProgress(speechText)
-                onComplete()
+        val session = SpeechSession(plan, onProgress, onComplete)
+        speechSession = session
+        val neuralQueued = neuralVoice.speak(
+            plan.spoken,
+            // Transcript is published as each chunk starts playing, so text follows the audio.
+            onChunk = { spokenPrefix -> speechHandler.post { session.progress(plan.displayPrefix(spokenPrefix.length)) } },
+            onComplete = { speechHandler.post { session.finish() } },
+            // Kokoro failed part-way: continue on the device voice after what was already heard.
+            fallback = { playedChars -> speechHandler.post { speakOnDevice(session, playedChars) } }
+        )
+        if (!neuralQueued) speakOnDevice(session, 0)
+    }
+
+    private fun speakOnDevice(session: SpeechSession, fromChar: Int) {
+        if (session.done || speechSession !== session) return
+        val engine = tts
+        if (engine == null || !deviceVoiceReady) { session.finish(); return }
+        val spoken = session.plan.spoken
+        val start = fromChar.coerceIn(0, spoken.length)
+        val skipped = spoken.substring(start).length - spoken.substring(start).trimStart().length
+        val body = spoken.substring(start + skipped)
+        if (body.isEmpty()) { session.finish(); return }
+        val base = start + skipped
+        val parts = splitForDeviceVoice(body)
+        session.sawRange = false
+        session.tickWord = session.plan.wordsThrough(start)
+        parts.forEachIndexed { index, (offset, partText) ->
+            val id = session.idPrefix + index
+            session.partOffsets[id] = base + offset
+            if (index == parts.lastIndex) session.lastPartId = id
+            val mode = if (index == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
+            if (engine.speak(partText, mode, null, id) == TextToSpeech.ERROR) {
+                engine.stop()
+                session.finish()
+                return
             }
         }
-        // Kokoro owns the transcript while neural playback is active. Publish each
-        // synthesized chunk before playback starts so text is visible alongside speech.
-        val neuralQueued = neuralVoice.speak(
-            spoken,
-            onChunk = { visible -> handler.post { if (!completed.get()) onProgress(visible) } },
-            onComplete = { finish() },
-            fallback = {
-                handler.post {
-                    val fallbackEngine = tts
-                    if (fallbackEngine == null) finish()
-                    else {
-                        var sawRange = false
-                        var wordIndex = 0
-                        val starts = Regex("\\S+").findAll(speechText).toList()
-                        var fallbackTick: Runnable? = null
-                        fun stopFallback() {
-                            fallbackTick?.let(handler::removeCallbacks)
-                            fallbackTick = null
-                        }
-                        fallbackEngine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                            override fun onStart(id: String?) {
-                                if (id != utteranceId) return
-                                handler.postDelayed({
-                                    if (!sawRange && wordIndex < starts.size) {
-                                        fun revealNext() {
-                                            if (sawRange || wordIndex >= starts.size || completed.get()) return
-                                            val end = starts[wordIndex].range.last + 1
-                                            onProgress(speechText.substring(0, end))
-                                            wordIndex++
-                                            fallbackTick = Runnable { revealNext() }
-                                            handler.postDelayed(fallbackTick!!, 300L)
-                                        }
-                                        revealNext()
-                                    }
-                                }, 350L)
-                            }
-                            override fun onRangeStart(id: String?, start: Int, end: Int, frame: Int) {
-                                if (id != utteranceId) return
-                                sawRange = true
-                                stopFallback()
-                                handler.post { if (!completed.get()) onProgress(speechText.substring(0, end.coerceIn(0, speechText.length))) }
-                            }
-                            override fun onDone(id: String?) {
-                                if (id == utteranceId) { stopFallback(); finish() }
-                            }
-                            @Deprecated("Deprecated in Java")
-                            override fun onError(id: String?) {
-                                if (id == utteranceId) { stopFallback(); finish() }
-                            }
-                            override fun onError(id: String?, errorCode: Int) = onError(id)
-                        })
-                        if (fallbackEngine.speak(spoken, TextToSpeech.QUEUE_FLUSH, null, utteranceId) == TextToSpeech.ERROR) finish()
-                    }
-                }
+    }
+
+    /** Android TTS rejects input over getMaxSpeechInputLength(); split at sentence boundaries. */
+    private fun splitForDeviceVoice(body: String, limit: Int = 3000): List<Pair<Int, String>> {
+        val parts = ArrayList<Pair<Int, String>>()
+        var pos = 0
+        while (pos < body.length) {
+            var end = minOf(body.length, pos + limit)
+            if (end < body.length) {
+                val window = body.substring(pos, end)
+                val sentence = maxOf(window.lastIndexOf(". "), window.lastIndexOf("! "), window.lastIndexOf("? "))
+                val cut = if (sentence > limit / 3) sentence else window.lastIndexOf(' ')
+                if (cut > 0) end = pos + cut + 1
             }
-        )
-        if (!neuralQueued) {
-            val engine = tts
-            if (engine == null) finish()
-            else {
-                var sawRange = false
-                var wordIndex = 0
-                val starts = Regex("\\S+").findAll(speechText).toList()
-                var fallbackTick: Runnable? = null
-                fun stopFallback() {
-                    fallbackTick?.let(handler::removeCallbacks)
-                    fallbackTick = null
+            parts.add(pos to body.substring(pos, end))
+            pos = end
+            while (pos < body.length && body[pos] == ' ') pos++
+        }
+        return parts
+    }
+
+    private val deviceVoiceListener = object : UtteranceProgressListener() {
+        override fun onStart(id: String?) {
+            speechHandler.post {
+                val s = speechSession?.takeIf { it.owns(id) && !it.done } ?: return@post
+                // Engines that never report word ranges still get a paced reveal.
+                if (s.ticker != null) return@post
+                val tick = object : Runnable {
+                    override fun run() {
+                        if (s.done || speechSession !== s || s.sawRange) return
+                        if (s.tickWord < s.plan.wordCount) {
+                            s.tickWord++
+                            s.progress(s.plan.displayAfterWords(s.tickWord))
+                            speechHandler.postDelayed(this, 300L)
+                        }
+                    }
                 }
-                engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                    override fun onStart(id: String?) {
-                        if (id != utteranceId) return
-                        handler.postDelayed({
-                            if (!sawRange && wordIndex < starts.size) {
-                                fun revealNext() {
-                                    if (sawRange || wordIndex >= starts.size || completed.get()) return
-                                    val end = starts[wordIndex].range.last + 1
-                                    onProgress(speechText.substring(0, end))
-                                    wordIndex++
-                                    fallbackTick = Runnable { revealNext() }
-                                    handler.postDelayed(fallbackTick!!, 300L)
-                                }
-                                revealNext()
-                            }
-                        }, 350L)
-                    }
-                    override fun onRangeStart(id: String?, start: Int, end: Int, frame: Int) {
-                        if (id != utteranceId) return
-                        sawRange = true
-                        stopFallback()
-                        handler.post { if (!completed.get()) onProgress(speechText.substring(0, end.coerceIn(0, speechText.length))) }
-                    }
-                    override fun onDone(id: String?) {
-                        if (id == utteranceId) { stopFallback(); finish() }
-                    }
-                    @Deprecated("Deprecated in Java")
-                    override fun onError(id: String?) {
-                        if (id == utteranceId) { stopFallback(); finish() }
-                    }
-                    override fun onError(id: String?, errorCode: Int) = onError(id)
-                })
-                if (engine.speak(spoken, TextToSpeech.QUEUE_FLUSH, null, utteranceId) == TextToSpeech.ERROR) finish()
+                s.ticker = tick
+                speechHandler.postDelayed(tick, 350L)
+            }
+        }
+        override fun onRangeStart(id: String?, start: Int, end: Int, frame: Int) {
+            speechHandler.post {
+                val s = speechSession?.takeIf { it.owns(id) && !it.done } ?: return@post
+                val offset = id?.let { s.partOffsets[it] } ?: return@post
+                s.sawRange = true
+                s.cancelTicker()
+                s.progress(s.plan.displayPrefix(offset + end))
+            }
+        }
+        override fun onDone(id: String?) {
+            speechHandler.post {
+                val s = speechSession?.takeIf { it.owns(id) } ?: return@post
+                if (id == s.lastPartId) s.finish()
+            }
+        }
+        @Deprecated("Deprecated in Java")
+        override fun onError(id: String?) {
+            speechHandler.post {
+                val s = speechSession?.takeIf { it.owns(id) } ?: return@post
+                runCatching { tts?.stop() }
+                s.finish()
+            }
+        }
+        override fun onError(id: String?, errorCode: Int) = onError(id)
+        override fun onStop(id: String?, interrupted: Boolean) {
+            // Interruptions we cause go through stopSpeech(); this only handles the engine stopping on its own.
+            speechHandler.post {
+                val s = speechSession?.takeIf { it.owns(id) } ?: return@post
+                if (interrupted) s.finish()
             }
         }
     }
@@ -814,6 +860,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     }
 
     private fun startVoiceInput() {
+        stopSpeech() // the recognizer must not hear XYAA's own voice
         if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             voiceInputStatus.value = "Microphone permission is needed for voice input."
             requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO), 43)
@@ -946,6 +993,8 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         liveVoiceSession = null
         speechRecognizer?.destroy()
         speechRecognizer = null
+        stopSpeech(completeInterrupted = false)
+        speechHandler.removeCallbacksAndMessages(null)
         neuralVoice.close()
         tts?.stop()
         tts?.shutdown()

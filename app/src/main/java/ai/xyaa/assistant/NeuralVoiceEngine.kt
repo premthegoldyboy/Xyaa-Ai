@@ -17,7 +17,12 @@ import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.Executors
+import java.util.concurrent.Future
+import java.util.concurrent.Semaphore
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 
 /** Offline neural speech output for XYAA, powered by Sherpa-ONNX + Kokoro. */
 class NeuralVoiceEngine(private val context: Context, private val onStatus: (String) -> Unit) {
@@ -30,10 +35,12 @@ class NeuralVoiceEngine(private val context: Context, private val onStatus: (Str
     private val modelDir = File(modelRoot, MODEL_DIR)
     private val executor = Executors.newSingleThreadExecutor() // Serialize model inference
     private val playbackExecutor = Executors.newSingleThreadExecutor() // Play while the next chunk is synthesized
+    private val revealExecutor = Executors.newSingleThreadExecutor()   // Waits for each chunk to drain, in order
     private val downloading = AtomicBoolean(false)
     @Volatile private var engine: OfflineTts? = null
     @Volatile private var audioTrack: AudioTrack? = null
     @Volatile private var closed = false
+    private val generation = AtomicInteger(0)
 
     fun initializeIfInstalled() {
         executor.execute {
@@ -93,40 +100,121 @@ class NeuralVoiceEngine(private val context: Context, private val onStatus: (Str
         }
     }
 
+    /**
+     * Speaks [text] (already cleaned by AssistantTextFormatter.forSpeech().spoken).
+     *
+     * - A new call, or [stop], supersedes any speech still running; stale work exits and never calls back.
+     * - [onChunk] receives the spoken transcript up to and including a chunk only after that chunk has
+     *   actually finished playing (AudioTrack head position reached the chunk's last frame), so the
+     *   transcript can never run ahead of the audio. Playback of the next chunk is not delayed by this.
+     * - [onComplete] fires exactly once, after the last sample has actually played.
+     * - If synthesis or playback fails, [fallback] receives the number of spoken characters already played
+     *   in full, so the device voice continues from there instead of repeating the whole answer.
+     */
     fun speak(
         text: String,
         onComplete: () -> Unit = {},
         onChunk: (String) -> Unit = {},
-        fallback: () -> Unit = {}
+        fallback: (Int) -> Unit = {}
     ): Boolean {
         val active = engine ?: return false
         if (closed || text.isBlank()) return false
+        val gen = generation.incrementAndGet()   // supersedes anything already speaking
+        haltPlayback()
         executor.execute {
+            fun stale() = closed || gen != generation.get()
+            val playedChars = AtomicInteger(0)
+            val playbackError = AtomicReference<Throwable?>(null)
+            val slots = Semaphore(2)               // synthesize at most two chunks ahead of playback
+            val framesWritten = AtomicLong(0)
+            val lastPlayback = AtomicReference<Future<*>?>(null)
+            val lastReveal = AtomicReference<Future<*>?>(null)
             try {
-                val spoken = text.replace(Regex("(?i)\\bX\\s*Y\\s*A\\s*A\\b"), "Zyaa")
-                    .replace(Regex("(?i)\\bXYAA\\b"), "Zyaa")
-                val chunks = speechChunks(spoken)
-                val revealed = StringBuilder()
-                chunks.forEach { chunk ->
-                    if (closed) return@execute
+                val chunks = speechChunks(text)
+                var consumedChars = 0
+                chunks.forEachIndexed { index, chunk ->
+                    if (stale()) return@execute
                     val audio = active.generate(chunk, sid = VOICE_ID, speed = 1.08f)
-                    // Publish the matching transcript as soon as synthesis completes.
-                    // Playback then begins immediately; UI text no longer waits for a full chunk.
-                    if (revealed.isNotEmpty()) revealed.append(' ')
-                    revealed.append(chunk)
-                    if (!closed) onChunk(revealed.toString())
-                    playbackExecutor.submit { play(audio.samples, audio.sampleRate) }.get()
+                    if (stale()) return@execute
+                    if (playbackError.get() != null) throw playbackError.get()!!
+                    val chunkStart = consumedChars
+                    consumedChars += chunk.length + 1
+                    val transcript = text.substring(0, minOf(text.length, chunkStart + chunk.length))
+                    val first = index == 0
+                    slots.acquire()
+                    lastPlayback.set(playbackExecutor.submit(Runnable {
+                        var target = 0L
+                        try {
+                            if (stale()) return@Runnable
+                            play(audio.samples, audio.sampleRate, first, framesWritten, ::stale)
+                            target = framesWritten.get()
+                        } catch (t: Throwable) {
+                            playbackError.compareAndSet(null, t)
+                        } finally { slots.release() }
+                        if (target <= 0L || stale()) return@Runnable
+                        // The next chunk may already be writing; reveal this one only once it has been heard.
+                        lastReveal.set(revealExecutor.submit(Runnable {
+                            try {
+                                awaitDrain(target, ::stale)
+                                if (!stale() && drained(target)) {
+                                    playedChars.set(chunkStart + chunk.length)
+                                    onChunk(transcript)
+                                }
+                            } catch (t: Throwable) {
+                                playbackError.compareAndSet(null, t)
+                            }
+                        }))
+                    }))
                 }
-                if (!closed) onComplete()
+                lastPlayback.get()?.get()
+                lastReveal.get()?.get()   // the final chunk has drained and its transcript has been published
+                playbackError.get()?.let { throw it }
+                if (stale()) return@execute
+                if (completed(gen)) onComplete()
             } catch (error: Throwable) {
+                if (stale()) return@execute
                 onStatus("Neural voice playback failed; switching to device voice for this reply.")
-                if (!closed) fallback()
+                haltPlayback()
+                // Claim the generation so nothing from this attempt can speak or complete afterwards.
+                if (generation.compareAndSet(gen, gen + 1)) fallback(playedChars.get())
             }
         }
         return true
     }
 
-    private fun speechChunks(text: String, maxChars: Int = 240): List<String> {
+    private val completedGeneration = AtomicInteger(-1)
+    /** True only the first time it is called for [gen]; guards against duplicate completion callbacks. */
+    private fun completed(gen: Int): Boolean = completedGeneration.getAndSet(gen) != gen
+
+    /** Stops neural speech immediately. Safe to call from any thread, and when nothing is playing. */
+    fun stop() {
+        generation.incrementAndGet()
+        haltPlayback()
+    }
+
+    private fun haltPlayback() {
+        runCatching { audioTrack?.let { it.pause(); it.flush() } }
+    }
+
+    private fun playbackHead(track: AudioTrack): Long = track.playbackHeadPosition.toLong() and 0xFFFFFFFFL
+
+    private fun awaitDrain(frames: Long, stale: () -> Boolean) {
+        val track = audioTrack ?: return
+        if (frames <= 0) return
+        val deadline = SystemClock.elapsedRealtime() + (frames * 1000L / track.sampleRate) + 1500L
+        while (!stale() && SystemClock.elapsedRealtime() < deadline) {
+            if (playbackHead(track) >= frames) return
+            Thread.sleep(20)
+        }
+    }
+
+    /** True when the track has really played [frames] frames (false if it was flushed or timed out). */
+    private fun drained(frames: Long): Boolean {
+        val track = audioTrack ?: return false
+        return playbackHead(track) >= frames
+    }
+
+    private fun speechChunks(text: String, maxChars: Int = 180): List<String> {
         val sentences = text.replace("\n", " ").split(Regex("(?<=[.!?])\\s+"))
             .map { it.trim() }.filter { it.isNotEmpty() }
         val chunks = mutableListOf<String>()
@@ -172,12 +260,16 @@ class NeuralVoiceEngine(private val context: Context, private val onStatus: (Str
         return OfflineTts(config = config)
     }
 
-    private fun play(samples: FloatArray, sampleRate: Int) {
-        if (samples.isEmpty() || closed) return
+    private fun play(
+        samples: FloatArray, sampleRate: Int, firstChunk: Boolean,
+        framesWritten: AtomicLong, stale: () -> Boolean
+    ) {
+        if (samples.isEmpty() || stale()) return
         // Keep one AudioTrack alive across all synthesized phrases. Recreating it for
         // every phrase adds audible startup gaps even when the next phrase is ready.
         var track = audioTrack
-        if (track == null || track.state != AudioTrack.STATE_INITIALIZED) {
+        if (track == null || track.state != AudioTrack.STATE_INITIALIZED || track.sampleRate != sampleRate) {
+            runCatching { track?.release() }
             val minBuffer = AudioTrack.getMinBufferSize(
                 sampleRate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_FLOAT
             ).coerceAtLeast(4096)
@@ -200,13 +292,19 @@ class NeuralVoiceEngine(private val context: Context, private val onStatus: (Str
                 .build()
             check(track.state == AudioTrack.STATE_INITIALIZED) { "Could not initialize audio output" }
             audioTrack = track
-            track.play()
+        } else if (firstChunk) {
+            // New utterance: drop anything left over from an interrupted one.
+            track.pause(); track.flush()
         }
+        if (firstChunk) framesWritten.set(0)
+        if (track.playState != AudioTrack.PLAYSTATE_PLAYING) track.play()
         var offset = 0
-        while (offset < samples.size && !closed) {
+        while (offset < samples.size && !stale()) {
             val written = track.write(samples, offset, samples.size - offset, AudioTrack.WRITE_BLOCKING)
+            if (stale()) return
             check(written > 0) { "Audio output stopped unexpectedly" }
             offset += written
+            framesWritten.addAndGet(written.toLong())
         }
     }
 
@@ -250,7 +348,7 @@ class NeuralVoiceEngine(private val context: Context, private val onStatus: (Str
     }
 
     fun close() {
-        closed = true; executor.shutdownNow(); playbackExecutor.shutdownNow()
+        closed = true; executor.shutdownNow(); playbackExecutor.shutdownNow(); revealExecutor.shutdownNow()
         runCatching { audioTrack?.pause(); audioTrack?.flush(); audioTrack?.stop(); audioTrack?.release() }; audioTrack = null
         runCatching { engine?.release() }; engine = null
     }

@@ -22,6 +22,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -104,6 +105,8 @@ internal fun XyaaPremiumApp(
         }
     }
 
+    val imeOpen = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+
     MaterialTheme(colorScheme = darkColorScheme(
         primary = Violet, secondary = Cyan, background = Bg, surface = Panel,
         onBackground = White, onSurface = White
@@ -123,7 +126,8 @@ internal fun XyaaPremiumApp(
                 }
             },
             bottomBar = {
-                NavigationBar(containerColor = Color(0xFF100D1C)) {
+                // The keyboard already covers the nav area; keeping the bar would stack it above the keyboard.
+                if (!imeOpen) NavigationBar(containerColor = Color(0xFF100D1C)) {
                     listOf("Orb" to Icons.Default.BubbleChart, "Chat" to Icons.Default.Forum,
                         "Research" to Icons.Default.Search, "Skills" to Icons.Default.GridView,
                         "Memory" to Icons.Default.Hub, "Settings" to Icons.Default.Settings).forEach { (name, icon) ->
@@ -140,7 +144,9 @@ internal fun XyaaPremiumApp(
                 }
             }
         ) { padding ->
-            Box(Modifier.fillMaxSize().padding(padding)) {
+            // Scaffold's padding already contains the system-bar insets; consume them so imePadding
+            // adds only the part of the keyboard that is not already accounted for (no double inset).
+            Box(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
                 when (tab) {
                     "Orb" -> HomePage(liveVoiceActive, liveVoiceStatus, wakeWordEnabled,
                         { tab = "Live Voice"; onStartLiveVoice() }, onStopLiveVoice, onStartWakeWord, onStopWakeWord, { tab = "Chat"; onVoice() },
@@ -221,138 +227,10 @@ private fun HomePage(
 
 @Composable
 private fun EnergyOrb(modifier: Modifier = Modifier, active: Boolean = false) {
-    // Compose recreation of the andrew-manzyk molten loader: seven clipped,
-    // rotating amber/orange liquid facets with a breathing, rounded core.
-    val motion = rememberInfiniteTransition(label = "xyaa-molten-orb")
-    val rotation by motion.animateFloat(
-        0f, 360f,
-        infiniteRepeatable(tween(2000, easing = androidx.compose.animation.core.LinearEasing), RepeatMode.Restart),
-        label = "molten-rotation"
-    )
-    val roundness by motion.animateFloat(
-        0f, 1f,
-        infiniteRepeatable(tween(1000, easing = androidx.compose.animation.core.FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "molten-roundness"
-    )
-    val breathe by motion.animateFloat(
-        .96f, 1.045f,
-        infiniteRepeatable(tween(if (active) 650 else 1300, easing = androidx.compose.animation.core.FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "molten-breathe"
-    )
-    val colorPhase by motion.animateFloat(
-        0f, 1f,
-        infiniteRepeatable(tween(2000, easing = androidx.compose.animation.core.LinearEasing), RepeatMode.Restart),
-        label = "molten-color"
-    )
-
-    val amber = Color(0xFFFFBF48)
-    val burnt = Color(0xFFBE4A1D)
-    val softAmber = Color(0x80FFBF47)
-    val softBurnt = Color(0x80BF4A1D)
-    val ember = Color(0x40FFBF47)
-
-    Canvas(modifier) {
-        val center = Offset(size.width * .5f, size.height * .5f)
-        val radius = size.minDimension * .285f
-        val coreRadius = radius * breathe
-        val circle = Path().apply {
-            addOval(Rect(center.x - radius, center.y - radius, center.x + radius, center.y + radius))
-        }
-
-        // Warm atmospheric glow, kept subtle so the molten shape remains crisp.
-        drawCircle(
-            Brush.radialGradient(listOf(softAmber.copy(alpha = .42f), softBurnt.copy(alpha = .20f), Color.Transparent), center, radius * 2.05f),
-            radius * 2.05f, center
-        )
-        drawCircle(
-            Brush.radialGradient(listOf(ember.copy(alpha = .8f), Color.Transparent), center, radius * 1.48f),
-            radius * 1.48f, center
-        )
-
-        clipPath(circle) {
-            // Seven independently offset polygonal liquid plates. Their softened
-            // vertices pulse between rounded and angular, echoing the SVG clip set.
-            repeat(7) { index ->
-                val plateRotation = rotation * (if (index % 2 == 0) 1f else -0.72f) + index * 51.43f
-                rotate(plateRotation, center) {
-                    val base = listOf(.20f, .83f, .66f, .98f, .48f, .88f, .28f, .76f)
-                    val points = base.mapIndexed { pointIndex, factor ->
-                        val angle = Math.toRadians((pointIndex * 45.0 - 157.5 + index * 7.0))
-                        val wobble = if (pointIndex % 2 == 0) roundness * .11f else -roundness * .08f
-                        val distance = radius * (factor + wobble) * (if (index % 2 == 0) 1f else .94f)
-                        Offset(
-                            center.x + kotlin.math.cos(angle).toFloat() * distance,
-                            center.y + kotlin.math.sin(angle).toFloat() * distance
-                        )
-                    }
-                    val shape = Path().apply {
-                        fun midpoint(a: Offset, b: Offset) = Offset((a.x + b.x) * .5f, (a.y + b.y) * .5f)
-                        moveTo(midpoint(points.last(), points.first()).x, midpoint(points.last(), points.first()).y)
-                        points.indices.forEach { pointIndex ->
-                            val next = points[(pointIndex + 1) % points.size]
-                            val mid = midpoint(points[pointIndex], next)
-                            quadraticTo(points[pointIndex].x, points[pointIndex].y, mid.x, mid.y)
-                        }
-                        close()
-                    }
-                    val blend = ((colorPhase + index * .115f) % 1f)
-                    fun mixColor(a: Color, b: Color, t: Float) = Color(
-                        red = a.red + (b.red - a.red) * t,
-                        green = a.green + (b.green - a.green) * t,
-                        blue = a.blue + (b.blue - a.blue) * t,
-                        alpha = a.alpha + (b.alpha - a.alpha) * t
-                    )
-                    val hot = mixColor(amber, burnt, blend)
-                    val cool = mixColor(burnt, Color(0xFF7A2818), blend)
-                    drawPath(
-                        shape,
-                        Brush.linearGradient(
-                            listOf(hot.copy(alpha = .98f), amber.copy(alpha = .94f), cool.copy(alpha = .96f)),
-                            Offset(center.x - radius, center.y - radius),
-                            Offset(center.x + radius, center.y + radius)
-                        ),
-                        alpha = if (index % 2 == 0) .94f else .78f
-                    )
-                }
-            }
-
-            // Liquid center and a moving specular highlight create the glossy,
-            // heated-glass appearance of the original amber loader.
-            drawCircle(
-                Brush.radialGradient(
-                    listOf(Color(0xFFFFE7A5), amber, Color(0xFFDA6A27), Color(0xFF8D321B)),
-                    Offset(center.x - coreRadius * .24f, center.y - coreRadius * .30f),
-                    coreRadius * 1.42f
-                ),
-                coreRadius * .91f, center
-            )
-            val highlight = Offset(
-                center.x - coreRadius * (.28f + .10f * roundness),
-                center.y - coreRadius * (.34f - .08f * roundness)
-            )
-            drawCircle(
-                Brush.radialGradient(listOf(Color.White.copy(alpha = .78f), amber.copy(alpha = .28f), Color.Transparent), highlight, coreRadius * .68f),
-                coreRadius * .68f, highlight
-            )
-            drawCircle(
-                Brush.radialGradient(listOf(Color.Transparent, Color(0x447A2818)), center, radius),
-                radius, center
-            )
-        }
-
-        // Small hot flecks sit close to the perimeter, rather than adding the
-        // unrelated cyan/violet orbiting particles from the previous design.
-        repeat(5) { index ->
-            val angle = Math.toRadians((rotation * (if (index % 2 == 0) 1.0 else -1.0) + index * 72.0))
-            val distance = radius * (1.10f + (index % 3) * .055f)
-            val point = Offset(
-                center.x + kotlin.math.cos(angle).toFloat() * distance,
-                center.y + kotlin.math.sin(angle).toFloat() * distance
-            )
-            drawCircle(amber.copy(alpha = .72f), radius * .025f, point)
-        }
-    }
+    // Native port of the andrew-manzyk molten loader; see MoltenOrb.kt.
+    MoltenOrb(modifier, active)
 }
+
 @Composable
 private fun GooeyThinkingDots(modifier: Modifier = Modifier) {
     val transition = rememberInfiniteTransition(label = "gooey-thinking")
@@ -433,10 +311,19 @@ private fun ChatPage(
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
-    LaunchedEffect(messages.size, messages.lastOrNull()?.first) {
+    val imeOpen = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+    // Animate only when a message is added; streaming text updates snap so the list never fights itself.
+    LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
     }
-    Column(Modifier.fillMaxSize().imePadding().padding(horizontal = 14.dp)) {
+    LaunchedEffect(messages.lastOrNull()?.first) {
+        if (messages.isNotEmpty()) listState.scrollToItem(messages.lastIndex)
+    }
+    // Keep the newest message in view when the keyboard opens and shrinks the list.
+    LaunchedEffect(imeOpen) {
+        if (messages.isNotEmpty()) listState.scrollToItem(messages.lastIndex)
+    }
+    Column(Modifier.fillMaxSize().padding(horizontal = 14.dp)) {
         Row(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("CHAT", color = Cyan, fontSize = 9.sp, letterSpacing = 2.2.sp, fontWeight = FontWeight.Bold)
