@@ -28,7 +28,7 @@ object XYAAAgentOrchestrator {
                 XYAAAgentKind.DOCUMENT, createPdf = true, needsResearch = research,
                 selectedAgents = if (research)
                     listOf("intent-router", "web-researcher", "source-grounder", "document-writer", "pdf-exporter")
-                else listOf("intent-router", "document-writer", "document-quality-check", "pdf-exporter")
+                else listOf("intent-router", "document-writer", "pdf-exporter")
             )
         }
         if (managementAgent.isManagementRequest(text))
@@ -53,10 +53,11 @@ object XYAAAgentOrchestrator {
     fun isExplicitResearchRequest(prompt: String): Boolean {
         val lower = prompt.trim().lowercase(Locale.ROOT)
         if (lower.isBlank()) return false
-        if (Regex("^\\s*(research|investigate|compare|look\\s+up|google)\\b").containsMatchIn(lower)) return true
+        if (Regex("\\b(research|investigate|compare|look\\s+up)\\b").containsMatchIn(lower) ||
+            Regex("^\\s*google\\b").containsMatchIn(lower)) return true
         if (Regex("\\b(search(?:\\s+the)?\\s+web|web\\s+search|search\\s+for|find\\s+out\\s+about|look\\s+up)\\b")
                 .containsMatchIn(lower)) return true
-        if (Regex("\\b(latest|current|currently|up[- ]to[- ]date|recent\\s+(?:news|updates)|today'?s\\s+(?:news|updates)|official\\s+sources|with\\s+sources|cite\\s+sources)\\b")
+        if (Regex("\\b(latest|current|currently|up[- ]to[- ]date|recent\\s+(?:news|updates)|today'?s\\s+(?:news|updates)|official\\s+sources|with\\s+sources|cite\\s+sources|news|weather)\\b")
                 .containsMatchIn(lower)) return true
         return Regex("^\\s*(?:make|write)\\s+(?:me\\s+)?a\\s+report\\b").containsMatchIn(lower)
     }
@@ -77,14 +78,14 @@ object ConversationMemoryAgent {
         val turns = memory.recentTurns().dropLast(1)
         if (turns.isEmpty()) return "I don't have an earlier conversation to recall yet."
         val lower = prompt.lowercase(Locale.ROOT)
-        val broadRecall = Regex("\\b(what did i (?:say|ask|tell you)|previous conversation|earlier i asked|do you remember)\\b")
+        val broadRecall = Regex("\\b(what did i (?:say|ask|tell you)|what was (?:the|that|my)|previous conversation|earlier i asked|do you remember)\\b")
             .containsMatchIn(lower)
         val ignored = setOf("what", "when", "where", "which", "that", "this", "with", "from", "about", "have", "were", "your", "tell", "said", "asked", "remember", "earlier", "previous", "conversation", "xyaa")
         val terms = Regex("[a-z0-9]{4,}").findAll(lower).map { it.value }.filterNot { it in ignored }.toSet()
         val relevant = if (terms.isEmpty()) null else turns.asReversed().firstOrNull { turn ->
             terms.any { turn.text.lowercase(Locale.ROOT).contains(it) }
         }
-        val selected = relevant ?: if (broadRecall) turns.lastOrNull { it.role == "user" } else null
+        val selected = relevant ?: (if (broadRecall) turns.lastOrNull { it.role == "user" } else null)
             ?: return "I couldn't find that detail in the recent conversation I have available."
         val role = if (selected.role == "user") "You previously said" else "XYAA previously replied"
         return "$role: ${selected.text}"

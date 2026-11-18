@@ -39,3 +39,20 @@ test('assistant actions are allowlisted and sensitive launches require confirmat
   assert.match(html, /confirm\('Open phone app to call/);
   assert.match(html, /confirm\('Open WhatsApp chat with/);
 });
+
+test('Android agent router gives PDF and explicit research intents priority over generic skills', () => {
+  const router = readFileSync(new URL('../app/src/main/java/ai/xyaa/assistant/XYAAAgentOrchestrator.kt', import.meta.url), 'utf8');
+  const activity = readFileSync(new URL('../app/src/main/java/ai/xyaa/assistant/MainActivity.kt', import.meta.url), 'utf8');
+  assert.match(router, /if \(pdf\)/);
+  assert.match(router, /isExplicitResearchRequest/);
+  assert.match(router, /search\\\\s\+for/);
+  assert.match(router, /WEB_RESEARCH/);
+  assert.ok(activity.indexOf('val agentPlan = XYAAAgentOrchestrator.plan') < activity.indexOf('val local = if (pdfRequest || agentPlan.needsResearch) null else skills.execute(prompt)'));
+  assert.match(activity, /val researchRequest = agentPlan.needsResearch/);
+});
+
+test('conversation-memory agent retrieves existing turns rather than inventing history', () => {
+  const router = readFileSync(new URL('../app/src/main/java/ai/xyaa/assistant/XYAAAgentOrchestrator.kt', import.meta.url), 'utf8');
+  assert.match(router, /memory\.recentTurns\(\)\.dropLast\(1\)/);
+  assert.match(router, /couldn't find that detail in the recent conversation/);
+});
