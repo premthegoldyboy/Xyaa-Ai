@@ -113,107 +113,77 @@ internal class MoltenField(private val grid: Int) {
     private fun sigmoid(x: Float): Float = 1f / (1f + exp(x.coerceIn(-30f, 30f)))
 
     fun render(tau: Float, out: IntArray) {
-        val shapes = MoltenSpec.SHAPES
-        for (i in shapes.indices) {
-            val s = shapes[i]
-            val deg = if (s.dir == 0) 90f else {
-                val ph = (((tau - s.delay) / MoltenSpec.PERIOD) % 1f + 1f) % 1f
-                s.dir * 360f * ph
-            }
-            val r = deg * (PI / 180.0)
-            val c = cos(r).toFloat(); val sn = sin(r).toFloat()
-            for (p in 0 until 3) {
-                val dx = s.pts[p * 2] - s.ox; val dy = s.pts[p * 2 + 1] - s.oy
-                verts[i * 6 + p * 2] = s.ox + dx * c - dy * sn
-                verts[i * 6 + p * 2 + 1] = s.oy + dx * sn + dy * c
-            }
-        }
-        val k = MoltenSpec.contrast(tau)
-        MoltenSpec.hueMatrix(MoltenSpec.hueDegrees(tau), hue)
+        // A continuous liquid-glass body replaces the old sharp polygon fragments.
         val step = 100f / grid
-        val toPx = grid / 100f
-        val sigK = 1.702f / MoltenSpec.BLUR_SIGMA
-        val one = MoltenSpec.COLOR_ONE; val two = MoltenSpec.COLOR_TWO
-        val five = MoltenSpec.COLOR_FIVE; val four = MoltenSpec.COLOR_FOUR
-
+        val phase = tau * 1.15f
+        val base = MoltenSpec.COLOR_ONE
+        val deep = MoltenSpec.COLOR_TWO
+        val warm = Color(1f, .82f, .48f, 1f)
         for (j in 0 until grid) {
             val py = (j + .5f) * step
-            val tg = ((py / 100f - .3f) / .4f).coerceIn(0f, 1f)
-            val boxR = one.red + (two.red - one.red) * tg
-            val boxG = one.green + (two.green - one.green) * tg
-            val boxB = one.blue + (two.blue - one.blue) * tg
-            val f = py / 100f
-            val discR = one.red * (1 - f) + two.red * f
-            val discG = one.green * (1 - f) + two.green * f
-            val discB = (71f / 255f) * (1 - f) + (29f / 255f) * f
-            val discA = .25f * (1 - f) + .5f * f
             for (i in 0 until grid) {
                 val px = (i + .5f) * step
-                val dxc = px - 50f; val dyc = py - 50f
-                val dist = sqrt(dxc * dxc + dyc * dyc)
-                val cc = ((50f - dist) * toPx + .5f).coerceIn(0f, 1f)
-                if (cc <= 0f) { out[j * grid + i] = 0; continue }
-
-                // union of blurred polygons (src-over), then contrast threshold
-                var prod = 1f
-                for (n in 0 until 7) {
-                    val b = n * 6
-                    val x0 = verts[b]; val y0 = verts[b + 1]
-                    val x1 = verts[b + 2]; val y1 = verts[b + 3]
-                    val x2 = verts[b + 4]; val y2 = verts[b + 5]
-                    var d2 = Float.MAX_VALUE
-                    var e = 0
-                    while (e < 3) {
-                        val ax: Float; val ay: Float; val bx: Float; val by: Float
-                        when (e) {
-                            0 -> { ax = x0; ay = y0; bx = x1; by = y1 }
-                            1 -> { ax = x1; ay = y1; bx = x2; by = y2 }
-                            else -> { ax = x2; ay = y2; bx = x0; by = y0 }
-                        }
-                        val ex = bx - ax; val ey = by - ay
-                        val t = (((px - ax) * ex + (py - ay) * ey) / (ex * ex + ey * ey)).coerceIn(0f, 1f)
-                        val qx = px - (ax + t * ex); val qy = py - (ay + t * ey)
-                        val dd = qx * qx + qy * qy
-                        if (dd < d2) d2 = dd
-                        e++
-                    }
-                    val c0 = (x1 - x0) * (py - y0) - (y1 - y0) * (px - x0)
-                    val c1 = (x2 - x1) * (py - y1) - (y2 - y1) * (px - x1)
-                    val c2 = (x0 - x2) * (py - y2) - (y0 - y2) * (px - x2)
-                    val inside = (c0 >= 0 && c1 >= 0 && c2 >= 0) || (c0 <= 0 && c1 <= 0 && c2 <= 0)
-                    val d = sqrt(d2)
-                    val sd = if (inside) -d else d
-                    prod *= 1f - sigmoid(sigK * sd)
+                val dx = (px - 50f) / 44f
+                val dy = (py - 50f) / 44f
+                val radius = hypot(dx, dy)
+                val angle = kotlin.math.atan2(dy, dx)
+                val ripple = sin(angle * 3f - phase) * .012f +
+                    sin(angle * 5f + phase * .62f) * .006f
+                val edge = 1f - radius + ripple
+                val alpha = ((edge * 44f + 1.35f) / 2.7f).coerceIn(0f, 1f)
+                if (alpha <= .002f) {
+                    out[j * grid + i] = 0
+                    continue
                 }
-                val m = (k * ((1f - prod) - .5f) + .5f).coerceIn(0f, 1f) * cc
+                val depth = (1f - radius).coerceIn(0f, 1f)
+                val facing = (1f - dx * dx - dy * dy).coerceAtLeast(0f)
+                val normalZ = sqrt(facing)
+                val diffuse = (dx * -.34f + dy * -.48f + normalZ * .62f).coerceIn(0f, 1f)
+                val shade = (.22f + .58f * diffuse + .20f * depth).coerceIn(0f, 1f)
+                val grad = ((py - 12f) / 76f).coerceIn(0f, 1f)
+                var r = (base.red * (1f - grad) + deep.red * grad) * shade
+                var g = (base.green * (1f - grad) + deep.green * grad) * shade
+                var b = (base.blue * (1f - grad) + deep.blue * grad) * shade
 
-                // premultiplied composite: liquid, disc fill, inset highlights
-                var r = boxR * m; var g = boxG * m; var bl = boxB * m; var a = m
-                // disc fill
-                var ca = discA * cc
-                r = discR * ca + r * (1 - ca); g = discG * ca + g * (1 - ca); bl = discB * ca + bl * (1 - ca); a = ca + a * (1 - ca)
-                // inset highlight (top)
-                val topShadow = 1f / (1f + exp(-1.702f * (hypot(dxc, py - 60f) - 50f) / 5f))
-                ca = .5f * cc * topShadow
-                r = one.red * ca + r * (1 - ca); g = one.green * ca + g * (1 - ca); bl = (71f / 255f) * ca + bl * (1 - ca); a = ca + a * (1 - ca)
-                // inset shade (bottom)
-                val botShadow = 1f / (1f + exp(-1.702f * (hypot(dxc, py - 40f) - 50f) / 5f))
-                ca = .5f * cc * botShadow
-                r = four.red * ca + r * (1 - ca); g = four.green * ca + g * (1 - ca); bl = four.blue * ca + bl * (1 - ca); a = ca + a * (1 - ca)
+                // Low-contrast moving caustics create depth without particle fragments.
+                val band = (sin(py * .105f + px * .045f + phase * 1.35f) *
+                    sin(px * .072f - phase * .8f)).coerceAtLeast(0f)
+                val caustic = band * depth * .10f
+                r = (r + warm.red * caustic).coerceIn(0f, 1f)
+                g = (g + warm.green * caustic).coerceIn(0f, 1f)
+                b = (b + warm.blue * caustic).coerceIn(0f, 1f)
 
-                if (a <= 1e-4f) { out[j * grid + i] = 0; continue }
-                val ur = r / a; val ug = g / a; val ub = bl / a
-                val hr = (hue[0] * ur + hue[1] * ug + hue[2] * ub).coerceIn(0f, 1f)
-                val hg = (hue[3] * ur + hue[4] * ug + hue[5] * ub).coerceIn(0f, 1f)
-                val hb = (hue[6] * ur + hue[7] * ug + hue[8] * ub).coerceIn(0f, 1f)
-                out[j * grid + i] = ((a * 255f + .5f).toInt() shl 24) or
-                    ((hr * 255f + .5f).toInt() shl 16) or ((hg * 255f + .5f).toInt() shl 8) or (hb * 255f + .5f).toInt()
+                // Broad glass reflection and a crisp specular highlight.
+                val hx = (dx + .34f) / .19f
+                val hy = (dy + .48f) / .29f
+                val broad = exp(-(hx * hx + hy * hy) * 1.7f) * .34f
+                val gx = (dx + .29f) / .055f
+                val gy = (dy + .43f) / .075f
+                val glint = exp(-(gx * gx + gy * gy) * 2f) * .82f
+                val reflection = (broad + glint).coerceIn(0f, .92f)
+                r += (1f - r) * reflection
+                g += (1f - g) * reflection
+                b += (1f - b) * reflection
+
+                val rimDelta = (radius - .88f) / .045f
+                val rim = exp(-(rimDelta * rimDelta)) * .24f
+                r = (r + warm.red * rim).coerceIn(0f, 1f)
+                g = (g + warm.green * rim).coerceIn(0f, 1f)
+                b = (b + warm.blue * rim).coerceIn(0f, 1f)
+
+                // Bitmap.setPixels expects straight (not premultiplied) ARGB values.
+                val a = (alpha * .98f).coerceIn(0f, 1f)
+                val pa = (a * 255f + .5f).toInt().coerceIn(0, 255)
+                val pr = (r * 255f + .5f).toInt().coerceIn(0, 255)
+                val pg = (g * 255f + .5f).toInt().coerceIn(0, 255)
+                val pb = (b * 255f + .5f).toInt().coerceIn(0, 255)
+                out[j * grid + i] = (pa shl 24) or (pr shl 16) or (pg shl 8) or pb
             }
         }
     }
 }
 
-private const val MOLTEN_GRID = 80
+private const val MOLTEN_GRID = 128
 private const val FRAME_NANOS = 33_000_000L // ~30 fps keeps CPU and battery low
 
 @Composable
@@ -273,7 +243,7 @@ internal fun MoltenOrb(modifier: Modifier = Modifier, active: Boolean = false) {
         val px = 100f * s / MOLTEN_GRID
         translate(center.x - 50f * s, center.y - 50f * s) {
             scale(px, px, pivot = Offset.Zero) {
-                drawImage(image, filterQuality = FilterQuality.Low)
+                drawImage(image, filterQuality = FilterQuality.Medium)
             }
         }
 
