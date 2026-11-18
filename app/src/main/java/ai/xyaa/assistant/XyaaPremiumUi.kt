@@ -532,7 +532,7 @@ private fun ChatPage(
                                                     putExtra(android.content.Intent.EXTRA_TEXT, AssistantTextFormatter.forDisplay(text))
                                                 }
                                                 val chooser = android.content.Intent.createChooser(sendIntent, "Share XYAA response")
-                                                contextStartActivity(chooser)
+                                                context.startActivity(chooser)
                                             },
                                             contentPadding = PaddingValues(horizontal = 7.dp, vertical = 3.dp)
                                         ) {
@@ -758,7 +758,6 @@ private fun KeyField(title:String,value:String,onValue:(String)->Unit,hint:Strin
     }
 }
 
-@Composable
 @Composable
 private fun MessageDock(
     value: String,
