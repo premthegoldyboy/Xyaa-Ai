@@ -85,8 +85,9 @@ object ConversationMemoryAgent {
         val relevant = if (terms.isEmpty()) null else turns.asReversed().firstOrNull { turn ->
             terms.any { turn.text.lowercase(Locale.ROOT).contains(it) }
         }
-        val selected = relevant ?: (if (broadRecall) turns.lastOrNull { it.role == "user" } else null)
-            ?: return "I couldn't find that detail in the recent conversation I have available."
+        val selected: ConversationMemory.Turn = relevant ?: run {
+            if (broadRecall) turns.lastOrNull { it.role == "user" } else null
+        } ?: return "I couldn't find that detail in the recent conversation I have available."
         val role = if (selected.role == "user") "You previously said" else "XYAA previously replied"
         return "$role: ${selected.text}"
     }
