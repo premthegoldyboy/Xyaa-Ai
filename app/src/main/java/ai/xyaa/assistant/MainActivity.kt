@@ -659,8 +659,8 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 .replace(Regex("(?i)^\\s*(?:please\\s+)?(?:i\\s+)?(?:want|need|would like)\\s+(?:you\\s+to\\s+)?"), "")
                 .replace(Regex("(?i)^\\s*(?:create|make|generate|prepare|export)\\s+(?:me\\s+)?"), "")
                 .replace(Regex("(?i)^\\s*(?:a\\s+)?pdf\\s+(?:of|about|on)\\s+"), "")
-                .replace(Regex("(?i)^\\s*(?:complete|full|detailed|comprehensive)\\s+(?:specifications?|specs?)\\s+(?:of|for)\\s+"), "")
-                .replace(Regex("(?i)^\\s*(?:specifications?|specs?)\\s+(?:of|for)\\s+"), "")
+                .replace(Regex("(?i)^\\s*(?:complete|full|detailed|comprehensive)\\s+(?:technical\\s+)?spe.{1,4}fic\\w*\\s+(?:(?:of|for)\\s+)?"), "")
+                .replace(Regex("(?i)^\\s*spe.{1,4}fic\\w*\\s+(?:of|for)\\s+"), "")
                 .replace(Regex("(?i)\\s+(?:and\\s+)?(?:make|create|generate|export|save)\\s+(?:me\\s+)?(?:a\\s+)?pdf.*$"), "")
                 .trim().trimEnd('.', '?')
             if (documentSubject.isNotBlank()) return documentSubject
