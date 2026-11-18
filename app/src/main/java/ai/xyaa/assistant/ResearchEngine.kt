@@ -58,8 +58,8 @@ class ResearchEngine(
         }
         try {
             val prompt = """Today is ${java.time.LocalDate.now()}. Research this topic using Google Search grounding: "$topic".
-Write a balanced, useful report in the user's language. Include a concise two-sentence spoken summary first, on a line beginning SPOKEN:.
-Then write Markdown with a title, TL;DR, key findings, details, and caveats. Distinguish verified facts from uncertainty. Do not invent figures, dates, quotes, or sources. Cite source markers like [1] where appropriate."""
+Write a complete, balanced report in the user's language that fulfils the exact scope implied by the topic. Include a concise two-sentence spoken summary first, on a line beginning SPOKEN:.
+Then write Markdown with a specific title, TL;DR, key findings, detailed subject-specific sections, and caveats. For product specification requests, include a well-organized specification table covering all available fields (display, chipset, memory/storage variants, cameras, battery/charging, connectivity, software, dimensions, sensors, and regional model identifiers); mark unavailable or unverified values clearly rather than guessing. Distinguish verified facts from uncertainty and model/region variants. Do not invent figures, dates, quotes, or sources. Cite source markers like [1] where appropriate."""
             val body = JSONObject()
                 .put("contents", JSONArray().put(JSONObject().put("role", "user")
                     .put("parts", JSONArray().put(JSONObject().put("text", prompt)))))

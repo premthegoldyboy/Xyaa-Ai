@@ -49,10 +49,11 @@ class ProviderFallbackClient(
         try {
             val body = JSONObject()
                 .put("model", provider.model)
-                .put("temperature", 0.4)
+                .put("temperature", 0.35)
+                .put("max_tokens", if (prompt.contains("complete document content", ignoreCase = true)) 4096 else 1024)
                 .put("messages", JSONArray()
                     .put(JSONObject().put("role", "system").put("content",
-                        "You are XYAA, pronounced Zyaa, a helpful Android voice assistant. Be concise, accurate, and honest."))
+                        "You are XYAA, pronounced Zyaa, an Android AI assistant. Follow the user's actual requested action, deliverable, format, scope, and constraints; do not substitute advice for an explicitly requested artifact. For PDF/document requests, write the complete subject-specific document for the app's PDF export workflow and never tell the user to copy text to create the file. Research factual/current product specifications, distinguish model and regional variants, cite sources when available, and never invent facts. Be honest about actions the app has not performed."))
                     .put(JSONObject().put("role", "user").put("content", prompt)))
             connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
             val status = connection.responseCode
