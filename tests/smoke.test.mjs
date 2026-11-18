@@ -113,3 +113,13 @@ test('Molten orb uses a continuous glossy liquid surface instead of polygon frag
   assert.match(orb, /FilterQuality.Medium/);
   assert.doesNotMatch(orb, /union of blurred polygons/);
 });
+
+
+test('Gemini Live voice uses XYAA playful personality and natural expressive delivery', () => {
+  const live = readFileSync(new URL('../app/src/main/java/ai/xyaa/assistant/GeminiLiveVoiceSession.kt', import.meta.url), 'utf8');
+  assert.match(live, /playful, upbeat, warmly feminine conversational style/);
+  assert.match(live, /bright, friendly, youthful energy/);
+  assert.match(live, /natural pacing, clear pronunciation, and varied but comfortable intonation/);
+  assert.match(live, /without mocking, flirting, or pretending to be human/);
+  assert.match(live, /never claim to have done something you did not do/);
+});
