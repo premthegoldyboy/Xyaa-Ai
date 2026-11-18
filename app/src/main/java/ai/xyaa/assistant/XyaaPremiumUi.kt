@@ -358,11 +358,13 @@ private fun ChatPage(
     val imeOpen = WindowInsets.ime.getBottom(LocalDensity.current) > 0
     val lastUserPrompt = messages.lastOrNull { it.second }?.first.orEmpty()
 
-    LaunchedEffect(messages.size) {
-        if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
-    }
-    LaunchedEffect(messages.lastOrNull()?.first, imeOpen) {
-        if (messages.isNotEmpty()) listState.scrollToItem(messages.lastIndex)
+    // Keep the newest message anchored at the bottom. scrollToItem(lastIndex) alone
+    // aligns the last row to the TOP of the viewport, making streamed replies appear
+    // to jump upward while text is still arriving.
+    LaunchedEffect(messages.size, messages.lastOrNull()?.first, imeOpen) {
+        if (messages.isNotEmpty()) {
+            listState.scrollToItem(messages.lastIndex, scrollOffset = Int.MAX_VALUE)
+        }
     }
 
     Column(Modifier.fillMaxSize().padding(horizontal = 14.dp)) {
