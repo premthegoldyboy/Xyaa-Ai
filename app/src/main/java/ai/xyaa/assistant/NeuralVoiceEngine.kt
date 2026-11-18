@@ -142,21 +142,22 @@ class NeuralVoiceEngine(private val context: Context, private val onStatus: (Str
                     val transcript = text.substring(0, minOf(text.length, chunkStart + chunk.length))
                     val first = index == 0
                     slots.acquire()
-                    // Start transcript tracking before the blocking AudioTrack write. If it
-                    // starts after play() returns, buffered audio may already have drained.
-                    val startFrame = framesWritten.get()
-                    val targetFrame = startFrame + audio.samples.size
-                    lastReveal.set(revealExecutor.submit(Runnable {
-                        try {
-                            val revealed = revealDuringPlayback(startFrame, targetFrame, chunkStart, chunk, text, ::stale, onChunk)
-                            if (!stale() && revealed) playedChars.set(chunkStart + chunk.length)
-                        } catch (t: Throwable) {
-                            playbackError.compareAndSet(null, t)
-                        }
-                    }))
                     lastPlayback.set(playbackExecutor.submit(Runnable {
                         try {
-                            if (!stale()) play(audio.samples, audio.sampleRate, first, framesWritten, ::stale)
+                            if (stale()) return@Runnable
+                            // Capture the frame range in playback order, then start transcript
+                            // tracking BEFORE the blocking AudioTrack write can fill its buffer.
+                            val startFrame = framesWritten.get()
+                            val targetFrame = startFrame + audio.samples.size
+                            lastReveal.set(revealExecutor.submit(Runnable {
+                                try {
+                                    val revealed = revealDuringPlayback(startFrame, targetFrame, chunkStart, chunk, text, ::stale, onChunk)
+                                    if (!stale() && revealed) playedChars.set(chunkStart + chunk.length)
+                                } catch (t: Throwable) {
+                                    playbackError.compareAndSet(null, t)
+                                }
+                            }))
+                            play(audio.samples, audio.sampleRate, first, framesWritten, ::stale)
                         } catch (t: Throwable) {
                             playbackError.compareAndSet(null, t)
                         } finally { slots.release() }
