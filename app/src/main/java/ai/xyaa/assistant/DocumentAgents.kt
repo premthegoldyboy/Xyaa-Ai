@@ -19,10 +19,8 @@ object PdfAgent {
         Never output placeholder headings such as "Document Overview", "Purpose", "Format", "Key Sections",
         "Details", or "Conclusion" unless those sections contain specific, useful information about the
         requested subject. Include concrete facts, explanations, comparisons, practical details, and
-        a useful conclusion appropriate to the topic. Never invent specifications, measurements,
-        model numbers, compatibility claims, dates, prices, or source references. If the request asks
-        for factual product specifications or current information, use the research workflow and cite
-        verifiable sources rather than guessing. If a fact cannot be verified, label it clearly as unknown.
+        a useful conclusion appropriate to the topic. If the request asks for research, use the research
+        workflow and cite verifiable sources rather than guessing.
         Return only the complete document body in clean Markdown, with a specific title and meaningful
         subject-specific sections. Do not ask the user to choose a save location in the document.
     """.trimIndent()

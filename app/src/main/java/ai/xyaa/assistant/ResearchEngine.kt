@@ -58,10 +58,8 @@ class ResearchEngine(
         }
         try {
             val prompt = """Today is ${java.time.LocalDate.now()}. Research this topic using Google Search grounding: "$topic".
-First identify the exact product/model and market or region. Prefer official manufacturer product pages, support pages, manuals and regulatory filings; use reputable independent reviews only to fill gaps.
 Write a complete, balanced report in the user's language that fulfils the exact scope implied by the topic. Include a concise two-sentence spoken summary first, on a line beginning SPOKEN:.
-Then write Markdown with a specific title, a short executive summary, detailed subject-specific analysis, and a clear limitations section.
-For product specifications, create a readable table with one row per attribute and its exact verified value. Never combine different regional models or related phone models. Do not use guessed ranges, approximate placeholders, generic chipset families, or speculative feature claims. If a value cannot be verified for the exact model/region, write "Not confirmed in the sources reviewed". Explain conflicts between sources instead of averaging them. Every factual specification must be supported by a grounding citation marker such as [1]. Do not invent figures, dates, quotes, or sources. End with a short source-quality note."""
+Then write Markdown with a specific title, TL;DR, key findings, detailed subject-specific sections, and caveats. For product specification requests, include a well-organized specification table covering all available fields (display, chipset, memory/storage variants, cameras, battery/charging, connectivity, software, dimensions, sensors, and regional model identifiers); mark unavailable or unverified values clearly rather than guessing. Distinguish verified facts from uncertainty and model/region variants. Do not invent figures, dates, quotes, or sources. Cite source markers like [1] where appropriate."""
             val body = JSONObject()
                 .put("contents", JSONArray().put(JSONObject().put("role", "user")
                     .put("parts", JSONArray().put(JSONObject().put("text", prompt)))))
@@ -85,9 +83,6 @@ For product specifications, create a readable table with one row per attribute a
                 if (uri.startsWith("https://") || uri.startsWith("http://")) {
                     if (seen.add(uri)) sources.add(Source(web.optString("title").ifBlank { uri }, uri))
                 }
-            }
-            if (sources.isEmpty()) {
-                throw IllegalStateException("Google Search returned no verifiable source links for this report.")
             }
             val withCitations = applyGroundingCitations(raw, candidate, sources)
             val split = splitSpoken(withCitations)
