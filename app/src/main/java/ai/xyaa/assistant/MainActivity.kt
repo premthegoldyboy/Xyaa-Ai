@@ -444,6 +444,8 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
 
     private fun process(prompt: String, answer: (String, Boolean) -> Unit) {
         rememberTurn("user", prompt)
+        // A single routing decision prevents generic browser skills from stealing research requests.
+        val agentPlan = XYAAAgentOrchestrator.plan(prompt, managementAgent)
         if (Regex("(?i)\\b(scan|import|index)\\b").containsMatchIn(prompt) &&
             Regex("(?i)\\b(phone|device|storage|folder|all|my)\\b").containsMatchIn(prompt) &&
             Regex("(?i)\\b(pdf|pdfs|documents)\\b").containsMatchIn(prompt)) {
@@ -451,15 +453,15 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             launchPdfFolderPicker()
             return
         }
-        val pdfRequest = PdfAgent.isRequest(prompt)
-        val managed = if (pdfRequest) null else managementAgent.execute(prompt)
+        val pdfRequest = agentPlan.createPdf
+        val managed = if (pdfRequest || agentPlan.kind != XYAAAgentKind.MANAGEMENT) null else managementAgent.execute(prompt)
         if (managed != null) {
             rememberTurn("assistant", managed)
             answer(managed, true)
             say(managed)
             return
         }
-        if (!pdfRequest && managementAgent.isManagementRequest(prompt)) {
+        if (!pdfRequest && agentPlan.kind == XYAAAgentKind.MANAGEMENT && managementAgent.isManagementRequest(prompt)) {
             val key = SecureKeyStore(this).read()
             val providers = ProviderKeyStore(this)
             val groq = providers.read("groq")
@@ -487,14 +489,23 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             }.start()
             return
         }
-        if (!pdfRequest && LinkAgent.matches(prompt)) {
+        if (!pdfRequest && agentPlan.kind == XYAAAgentKind.LINKS) {
             val result = LinkAgent.generate(prompt)
             rememberTurn("assistant", result)
             answer(result, true)
             say("Links prepared.")
             return
         }
-        val local = if (pdfRequest) null else skills.execute(prompt)
+        if (!pdfRequest && agentPlan.kind == XYAAAgentKind.MEMORY) {
+            val recalled = ConversationMemoryAgent.execute(prompt, conversationMemory)
+            if (recalled != null) {
+                rememberTurn("assistant", recalled)
+                answer(recalled, true)
+                say(recalled)
+                return
+            }
+        }
+        val local = if (pdfRequest || agentPlan.needsResearch) null else skills.execute(prompt)
         if (local != null) {
             rememberTurn("assistant", local)
             answer(local, true)
@@ -522,8 +533,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 (if (memoryContext.isBlank()) "" else "Recent context:\\n$memoryContext\\n\\n") + "Current request: $prompt"
             val aiPrompt = if (pdfRequest) PdfAgent.contentPrompt(prompt) else contextualPrompt
 
-            val researchRequest = isResearchRequest(prompt) ||
-                (pdfRequest && PdfAgent.needsResearch(prompt))
+            val researchRequest = agentPlan.needsResearch
             if (researchRequest) {
                 val topic = extractResearchTopic(prompt, pdfRequest)
                 val report = runCatching {
@@ -656,6 +666,8 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     private fun extractResearchTopic(prompt: String, forPdf: Boolean = false): String {
         if (forPdf) {
             val documentSubject = prompt
+                .replace(Regex("(?i)\\s+(?:and\\s+)?(?:please\\s+)?(?:create|make|generate|export|save)\\s+(?:me\\s+)?(?:a\\s+)?pdf.*$"), "")
+                .replace(Regex("(?i)^\\s*(?:please\\s+)?(?:search(?:\\s+the)?\\s+web|web\\s+search|search\\s+for|google|look\\s+up|research|investigate)\\s+(?:for\\s+|about\\s+|on\\s+)?"), "")
                 .replace(Regex("(?i)^\\s*(?:please\\s+)?(?:i\\s+)?(?:want|need|would like)\\s+(?:you\\s+to\\s+)?"), "")
                 .replace(Regex("(?i)^\\s*(?:create|make|generate|prepare|export)\\s+(?:me\\s+)?"), "")
                 .replace(Regex("(?i)^\\s*(?:a\\s+)?pdf\\s+(?:of|about|on)\\s+"), "")
