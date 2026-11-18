@@ -601,7 +601,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                     pdfDraft = response
                     answer("Your PDF is ready. Choose a location to save it.", true)
                     openPdfPicker()
-                    speakChatAnswer("Your PDF is ready. Choose a location to save it.")
+                    say("Your PDF is ready. Choose a location to save it.")
                 } else {
                     // Reveal the same transcript progressively as the speech engine advances.
                     answer("Speaking…", false)
