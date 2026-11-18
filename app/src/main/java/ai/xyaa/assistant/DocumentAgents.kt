@@ -5,7 +5,7 @@ import java.net.URLEncoder
 /** Task-specific agents used by the chat router. */
 object PdfAgent {
     fun isRequest(prompt: String): Boolean =
-        Regex("\\b(create|make|generate|export|prepare|want|need)\\b.*\\b(pdf|document)\\b|\\b(pdf|document)\\b.*\\b(create|make|generate|want|need)\\b|\\b(pdf|document)\\s+(?:of|about|on)\\b",
+        Regex("\\b(create|make|generate|export|prepare|want|need|give|provide|request|would\\s+like)\\b.*\\b(pdf|document)\\b|\\b(pdf|document)\\b.*\\b(create|make|generate|want|need|give|provide|request)\\b|\\b(pdf|document)\\s+(?:of|about|on)\\b",
             RegexOption.IGNORE_CASE).containsMatchIn(prompt)
 
     fun needsResearch(prompt: String): Boolean =
