@@ -1,9 +1,6 @@
 package ai.xyaa.assistant
 
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -45,6 +42,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 
 private val Bg = Color(0xFF080812)
 private val Panel = Color(0xFF151126)
@@ -61,16 +59,14 @@ private val Line = Color(0xFF34294F)
  */
 @Composable
 private fun XyaaLoadingIndicator(modifier: Modifier = Modifier) {
-    val transition = rememberInfiniteTransition(label = "xyaa-loading-words")
-    val position by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 4f,
-        animationSpec = androidx.compose.animation.core.infiniteRepeatable(
-            animation = tween(durationMillis = 3600, easing = androidx.compose.animation.core.LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "loading-word-position"
-    )
+    val words = remember { listOf("thinking", "searching", "reading", "writing", "checking", "speaking") }
+    var wordIndex by remember { mutableIntStateOf(0) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(1150)
+            wordIndex = (wordIndex + 1) % words.size
+        }
+    }
     Row(
         modifier = modifier
             .background(Panel, RoundedCornerShape(12.dp))
@@ -78,27 +74,18 @@ private fun XyaaLoadingIndicator(modifier: Modifier = Modifier) {
             .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text("loading", color = White, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-        Spacer(Modifier.width(7.dp))
+        Text("XYAA", color = Muted, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+        Spacer(Modifier.width(8.dp))
         Box(
-            modifier = Modifier
-                .height(21.dp)
-                .width(86.dp)
-                .clip(RoundedCornerShape(3.dp))
+            modifier = Modifier.height(22.dp).width(92.dp).clip(RoundedCornerShape(4.dp)),
+            contentAlignment = Alignment.CenterStart
         ) {
-            Column(modifier = Modifier.offset(y = (-position * 21f).dp)) {
-                listOf("buttons", "forms", "switches", "cards", "buttons").forEach { word ->
-                    Text(
-                        word,
-                        modifier = Modifier.height(21.dp),
-                        color = Cyan,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1
-                    )
-                }
+            Crossfade(targetState = words[wordIndex], animationSpec = tween(260), label = "xyaa-loading-word") { word ->
+                Text(word, color = Cyan, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1)
             }
         }
+        Spacer(Modifier.width(5.dp))
+        GooeyThinkingDots(Modifier.size(18.dp))
     }
 }
 
