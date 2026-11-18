@@ -55,6 +55,53 @@ private val White = Color(0xFFF5F3FF)
 private val Muted = Color(0xFFA9A2C2)
 private val Line = Color(0xFF34294F)
 
+/**
+ * Compact Compose version of the Uiverse rotating-words loader.
+ * The repeated first word makes the vertical loop seamless.
+ */
+@Composable
+private fun XyaaLoadingIndicator(modifier: Modifier = Modifier) {
+    val transition = rememberInfiniteTransition(label = "xyaa-loading-words")
+    val position by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 4f,
+        animationSpec = androidx.compose.animation.core.infiniteRepeatable(
+            animation = tween(durationMillis = 3600, easing = androidx.compose.animation.core.LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "loading-word-position"
+    )
+    Row(
+        modifier = modifier
+            .background(Panel, RoundedCornerShape(12.dp))
+            .border(1.dp, Line, RoundedCornerShape(12.dp))
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text("loading", color = White, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+        Spacer(Modifier.width(7.dp))
+        Box(
+            modifier = Modifier
+                .height(21.dp)
+                .width(86.dp)
+                .clip(RoundedCornerShape(3.dp))
+        ) {
+            Column(modifier = Modifier.offset(y = (-position * 21f).dp)) {
+                listOf("buttons", "forms", "switches", "cards", "buttons").forEach { word ->
+                    Text(
+                        word,
+                        modifier = Modifier.height(21.dp),
+                        color = Cyan,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1
+                    )
+                }
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun XyaaPremiumApp(
@@ -365,11 +412,8 @@ private fun ChatPage(
                             Column(Modifier.weight(1f)) {
                                 Text("XYAA", color = Cyan, fontSize = 9.sp, letterSpacing = 1.4.sp, fontWeight = FontWeight.Bold)
                                 Spacer(Modifier.height(5.dp))
-                                if (text.isBlank()) {
-                                    Surface(color = Panel, shape = RoundedCornerShape(14.dp),
-                                        modifier = Modifier.border(1.dp, Line, RoundedCornerShape(14.dp))) {
-                                        Text("Connecting…", Modifier.padding(horizontal = 13.dp, vertical = 9.dp), color = Muted, fontSize = 12.sp)
-                                    }
+                                if (text.isBlank() || text == "Connecting…" || text == "Thinking…" || text == "Speaking…") {
+                                    XyaaLoadingIndicator()
                                 } else {
                                     Surface(color = Panel, shape = RoundedCornerShape(5.dp, 18.dp, 18.dp, 18.dp),
                                         modifier = Modifier.fillMaxWidth().border(1.dp, Line, RoundedCornerShape(5.dp,18.dp,18.dp,18.dp))) {
