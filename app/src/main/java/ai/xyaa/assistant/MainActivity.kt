@@ -451,14 +451,15 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             launchPdfFolderPicker()
             return
         }
-        val managed = managementAgent.execute(prompt)
+        val pdfRequest = PdfAgent.isRequest(prompt)
+        val managed = if (pdfRequest) null else managementAgent.execute(prompt)
         if (managed != null) {
             rememberTurn("assistant", managed)
             answer(managed, true)
             say(managed)
             return
         }
-        if (managementAgent.isManagementRequest(prompt)) {
+        if (!pdfRequest && managementAgent.isManagementRequest(prompt)) {
             val key = SecureKeyStore(this).read()
             val providers = ProviderKeyStore(this)
             val groq = providers.read("groq")
@@ -486,14 +487,14 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             }.start()
             return
         }
-        if (LinkAgent.matches(prompt)) {
+        if (!pdfRequest && LinkAgent.matches(prompt)) {
             val result = LinkAgent.generate(prompt)
             rememberTurn("assistant", result)
             answer(result, true)
             say("Links prepared.")
             return
         }
-        val local = skills.execute(prompt)
+        val local = if (pdfRequest) null else skills.execute(prompt)
         if (local != null) {
             rememberTurn("assistant", local)
             answer(local, true)
@@ -519,11 +520,10 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             val memoryContext = conversationMemory.contextForPrompt()
             val contextualPrompt = "You are XYAA, a helpful, precise personal AI. Answer directly, structure complex answers with headings and steps, explain uncertainty, and never invent sources or claim actions you did not perform.\\n\\n" +
                 (if (memoryContext.isBlank()) "" else "Recent context:\\n$memoryContext\\n\\n") + "Current request: $prompt"
-            val pdfRequest = PdfAgent.isRequest(prompt)
             val aiPrompt = if (pdfRequest) PdfAgent.contentPrompt(prompt) else contextualPrompt
 
             val researchRequest = isResearchRequest(prompt) ||
-                (pdfRequest && Regex("\\b(research|investigate|look up|find information|in-depth|detailed report)\\b", RegexOption.IGNORE_CASE).containsMatchIn(prompt))
+                (pdfRequest && PdfAgent.needsResearch(prompt))
             if (researchRequest) {
                 val topic = extractResearchTopic(prompt, pdfRequest)
                 val report = runCatching {
@@ -537,12 +537,12 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                     if (pdfRequest) pdfDraft = rendered
                     runOnUiThread {
                         answer(rendered, false)
+                        // Request the save destination as soon as the document exists; saving must
+                        // not depend on the user waiting for the spoken summary to finish.
+                        if (pdfRequest) openPdfPicker()
                         speakChatAnswer(result.spoken.ifBlank { "Research report completed." },
                             onProgress = { visible -> answer(visible, false) },
-                            onComplete = {
-                                answer(rendered, true)
-                                if (pdfRequest) openPdfPicker()
-                            })
+                            onComplete = { answer(rendered, true) })
                     }
                 }.onFailure { error ->
                     val message = "Research failed: ${error.message.orEmpty().take(180)}"
@@ -572,15 +572,13 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             runOnUiThread {
                 // The complete answer is now available; text begins revealing only as speech starts.
                 answer("Speaking…", false)
+                if (pdfRequest && response.isNotBlank()) {
+                    pdfDraft = response
+                    openPdfPicker()
+                }
                 speakChatAnswer(response,
                     onProgress = { visible -> answer(visible, false) },
-                    onComplete = {
-                        answer(response, true)
-                        if (pdfRequest && response.isNotBlank()) {
-                            pdfDraft = response
-                            openPdfPicker()
-                        }
-                    })
+                    onComplete = { answer(response, true) })
             }
         }.start()
     }
@@ -656,6 +654,17 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     ).containsMatchIn(prompt)
 
     private fun extractResearchTopic(prompt: String, forPdf: Boolean = false): String {
+        if (forPdf) {
+            val documentSubject = prompt
+                .replace(Regex("(?i)^\\s*(?:please\\s+)?(?:i\\s+)?(?:want|need|would like)\\s+(?:you\\s+to\\s+)?"), "")
+                .replace(Regex("(?i)^\\s*(?:create|make|generate|prepare|export)\\s+(?:me\\s+)?"), "")
+                .replace(Regex("(?i)^\\s*(?:a\\s+)?pdf\\s+(?:of|about|on)\\s+"), "")
+                .replace(Regex("(?i)^\\s*(?:complete|full|detailed|comprehensive)\\s+(?:specifications?|specs?)\\s+(?:of|for)\\s+"), "")
+                .replace(Regex("(?i)^\\s*(?:specifications?|specs?)\\s+(?:of|for)\\s+"), "")
+                .replace(Regex("(?i)\\s+(?:and\\s+)?(?:make|create|generate|export|save)\\s+(?:me\\s+)?(?:a\\s+)?pdf.*$"), "")
+                .trim().trimEnd('.', '?')
+            if (documentSubject.isNotBlank()) return documentSubject
+        }
         val researchStart = Regex(
             "(?i)\\b(?:research|investigate|find out about|look up information about)\\b\\s*(?:about\\s+|on\\s+)?"
         ).find(prompt)
@@ -818,7 +827,8 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 .put("system_instruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text",
                     "You are XYAA, a helpful Android assistant with spoken audio output provided by the Android app. Be concise and direct. Pronounce XYAA as Zyaa. Never claim you are text-only or that the app has no voice output. Be honest about actions."))))
                 .put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", prompt)))))
-                .put("generationConfig", JSONObject().put("temperature", 0.5).put("maxOutputTokens", 280))
+                .put("generationConfig", JSONObject().put("temperature", 0.35)
+                    .put("maxOutputTokens", if (prompt.contains("complete document content", ignoreCase = true)) 4096 else 1024))
             connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
             val status = connection.responseCode
             if (status !in 200..299) {

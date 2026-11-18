@@ -19,6 +19,8 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.drawscope.translate
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.exp
@@ -234,7 +236,8 @@ internal fun MoltenOrb(modifier: Modifier = Modifier, active: Boolean = false) {
                 if (dt >= FRAME_NANOS) {
                     last = now
                     tau = (tau + dt / 1_000_000_000f * (if (active) 1.35f else 1f)) % (MoltenSpec.PERIOD * 3f)
-                    field.render(tau, pixels)
+                    // The pixel field is CPU-heavy; keep it off the Compose/UI thread.
+                    withContext(Dispatchers.Default) { field.render(tau, pixels) }
                     bitmap.setPixels(pixels, 0, MOLTEN_GRID, 0, 0, MOLTEN_GRID, MOLTEN_GRID)
                     hueDeg = MoltenSpec.hueDegrees(tau)
                     version++

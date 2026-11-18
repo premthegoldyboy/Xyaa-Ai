@@ -5,8 +5,12 @@ import java.net.URLEncoder
 /** Task-specific agents used by the chat router. */
 object PdfAgent {
     fun isRequest(prompt: String): Boolean =
-        Regex("\\b(create|make|generate|export|prepare)\\b.*\\b(pdf|document)\\b|\\b(pdf|document)\\b.*\\b(create|make|generate)\\b", RegexOption.IGNORE_CASE)
-            .containsMatchIn(prompt)
+        Regex("\\b(create|make|generate|export|prepare|want|need)\\b.*\\b(pdf|document)\\b|\\b(pdf|document)\\b.*\\b(create|make|generate|want|need)\\b|\\b(pdf|document)\\s+(?:of|about|on)\\b",
+            RegexOption.IGNORE_CASE).containsMatchIn(prompt)
+
+    fun needsResearch(prompt: String): Boolean =
+        Regex("\\b(complete|full|detailed|comprehensive)\\s+(?:technical\\s+)?(?:specifications?|specs?)\\b|\\b(specifications?|specs?)\\s+(?:of|for)\\b|\\b(price|availability|release date|dimensions|battery capacity|processor|camera specifications)\\b",
+            RegexOption.IGNORE_CASE).containsMatchIn(prompt)
 
     fun contentPrompt(prompt: String): String = """
         Create polished, complete document content for the user's PDF request:

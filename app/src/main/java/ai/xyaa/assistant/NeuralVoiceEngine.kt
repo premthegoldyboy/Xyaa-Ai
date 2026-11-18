@@ -143,23 +143,23 @@ class NeuralVoiceEngine(private val context: Context, private val onStatus: (Str
                     val first = index == 0
                     slots.acquire()
                     lastPlayback.set(playbackExecutor.submit(Runnable {
+                        var startFrame = 0L
                         var target = 0L
                         try {
                             if (stale()) return@Runnable
+                            startFrame = framesWritten.get()
                             play(audio.samples, audio.sampleRate, first, framesWritten, ::stale)
                             target = framesWritten.get()
                         } catch (t: Throwable) {
                             playbackError.compareAndSet(null, t)
                         } finally { slots.release() }
-                        if (target <= 0L || stale()) return@Runnable
-                        // The next chunk may already be writing; reveal this one only once it has been heard.
+                        if (target <= startFrame || stale()) return@Runnable
+                        // Reveal word boundaries continuously as the playback head advances. The
+                        // transcript therefore follows the voice instead of appearing at utterance end.
                         lastReveal.set(revealExecutor.submit(Runnable {
                             try {
-                                awaitDrain(target, ::stale)
-                                if (!stale() && drained(target)) {
-                                    playedChars.set(chunkStart + chunk.length)
-                                    onChunk(transcript)
-                                }
+                                revealDuringPlayback(startFrame, target, chunkStart, chunk, text, ::stale, onChunk)
+                                if (!stale() && drained(target)) playedChars.set(chunkStart + chunk.length)
                             } catch (t: Throwable) {
                                 playbackError.compareAndSet(null, t)
                             }
@@ -198,13 +198,37 @@ class NeuralVoiceEngine(private val context: Context, private val onStatus: (Str
 
     private fun playbackHead(track: AudioTrack): Long = track.playbackHeadPosition.toLong() and 0xFFFFFFFFL
 
-    private fun awaitDrain(frames: Long, stale: () -> Boolean) {
+    private fun revealDuringPlayback(
+        startFrame: Long,
+        endFrame: Long,
+        chunkStart: Int,
+        chunk: String,
+        fullText: String,
+        stale: () -> Boolean,
+        onChunk: (String) -> Unit
+    ) {
         val track = audioTrack ?: return
-        if (frames <= 0) return
-        val deadline = SystemClock.elapsedRealtime() + (frames * 1000L / track.sampleRate) + 1500L
+        val durationFrames = (endFrame - startFrame).coerceAtLeast(1L)
+        val deadline = SystemClock.elapsedRealtime() + (durationFrames * 1000L / track.sampleRate) + 2000L
+        var lastVisible = 0
         while (!stale() && SystemClock.elapsedRealtime() < deadline) {
-            if (playbackHead(track) >= frames) return
-            Thread.sleep(20)
+            val playedFrames = (playbackHead(track) - startFrame).coerceIn(0L, durationFrames)
+            val fraction = playedFrames.toFloat() / durationFrames.toFloat()
+            val estimated = (chunk.length * fraction).toInt().coerceIn(0, chunk.length)
+            // Avoid exposing half a word; move the reveal point back to the last word boundary.
+            var visible = estimated
+            if (visible < chunk.length) {
+                while (visible > 0 && !chunk[visible - 1].isWhitespace()) visible--
+            }
+            if (visible > lastVisible) {
+                lastVisible = visible
+                onChunk(fullText.substring(0, minOf(fullText.length, chunkStart + visible)).trimEnd())
+            }
+            if (playedFrames >= durationFrames) break
+            Thread.sleep(35)
+        }
+        if (!stale() && playbackHead(track) >= endFrame) {
+            onChunk(fullText.substring(0, minOf(fullText.length, chunkStart + chunk.length)))
         }
     }
 
