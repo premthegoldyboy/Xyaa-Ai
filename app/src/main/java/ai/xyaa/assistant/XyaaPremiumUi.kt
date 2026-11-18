@@ -352,6 +352,7 @@ private fun ChatPage(
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     val clipboard = LocalClipboardManager.current
+    val context = androidx.compose.ui.platform.LocalContext.current
     val imeOpen = WindowInsets.ime.getBottom(LocalDensity.current) > 0
     val lastUserPrompt = messages.lastOrNull { it.second }?.first.orEmpty()
 
@@ -523,6 +524,21 @@ private fun ChatPage(
                                             Icon(Icons.Default.ContentCopy, null, tint = Muted, modifier = Modifier.size(13.dp))
                                             Spacer(Modifier.width(4.dp))
                                             Text("Copy", color = Muted, fontSize = 10.sp)
+                                        }
+                                        TextButton(
+                                            onClick = {
+                                                val sendIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                                    type = "text/plain"
+                                                    putExtra(android.content.Intent.EXTRA_TEXT, AssistantTextFormatter.forDisplay(text))
+                                                }
+                                                val chooser = android.content.Intent.createChooser(sendIntent, "Share XYAA response")
+                                                contextStartActivity(chooser)
+                                            },
+                                            contentPadding = PaddingValues(horizontal = 7.dp, vertical = 3.dp)
+                                        ) {
+                                            Icon(Icons.Default.Share, null, tint = Muted, modifier = Modifier.size(13.dp))
+                                            Spacer(Modifier.width(4.dp))
+                                            Text("Share", color = Muted, fontSize = 10.sp)
                                         }
                                         if (text == messages.lastOrNull { !it.second }?.first && lastUserPrompt.isNotBlank()) {
                                             TextButton(
@@ -743,21 +759,73 @@ private fun KeyField(title:String,value:String,onValue:(String)->Unit,hint:Strin
 }
 
 @Composable
-private fun MessageDock(value:String,onValue:(String)->Unit,send:()->Unit,voice:()->Unit,enabled:Boolean=true) {
-    Surface(color=Color(0xFF171329),shape=RoundedCornerShape(24.dp),modifier=Modifier.fillMaxWidth().border(1.dp,Color(0xFF51406F),RoundedCornerShape(24.dp)), shadowElevation=10.dp) {
-        Row(Modifier.padding(horizontal=7.dp, vertical=6.dp), verticalAlignment=Alignment.Bottom) {
-            OutlinedTextField(value,onValue,Modifier.weight(1f),placeholder={Text("Message XYAA…",color=Muted,fontSize=13.sp)},
-                minLines=1,maxLines=5,shape=RoundedCornerShape(18.dp),colors=fieldColors(),
-                keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Text, imeAction=androidx.compose.ui.text.input.ImeAction.Send),
-                keyboardActions=androidx.compose.foundation.text.KeyboardActions(onSend={if(enabled && value.isNotBlank()) send()}))
-            IconButton(onClick=voice,modifier=Modifier.padding(bottom=3.dp).size(42.dp)) { Icon(Icons.Default.Mic,"Voice input",tint=Cyan) }
-            IconButton(onClick=send,enabled=enabled && value.isNotBlank(),modifier=Modifier.padding(bottom=3.dp).size(42.dp).background(if(enabled && value.isNotBlank()) Violet else Panel2,CircleShape)) {
-                Icon(Icons.Default.ArrowUpward,"Send",tint=White)
+@Composable
+private fun MessageDock(
+    value: String,
+    onValue: (String) -> Unit,
+    send: () -> Unit,
+    voice: () -> Unit,
+    enabled: Boolean = true
+) {
+    val canSend = enabled && value.isNotBlank()
+    Surface(
+        color = Color(0xFF171329),
+        shape = RoundedCornerShape(23.dp),
+        modifier = Modifier.fillMaxWidth().border(1.dp, Color(0xFF51406F), RoundedCornerShape(23.dp)),
+        shadowElevation = 12.dp
+    ) {
+        Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+            Row(
+                Modifier.fillMaxWidth().padding(start = 3.dp, bottom = 3.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("MESSAGE XYAA", color = Muted, fontSize = 8.sp, letterSpacing = 1.5.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.weight(1f))
+                Text(
+                    if (enabled) "ENTER TO SEND" else "XYAA IS WORKING",
+                    color = if (enabled) Muted.copy(alpha = .72f) else Cyan,
+                    fontSize = 8.sp,
+                    letterSpacing = .8.sp
+                )
+            }
+            Row(verticalAlignment = Alignment.Bottom) {
+                OutlinedTextField(
+                    value = value,
+                    onValueChange = onValue,
+                    modifier = Modifier.weight(1f),
+                    placeholder = { Text("Ask anything or give XYAA a task…", color = Muted, fontSize = 13.sp) },
+                    minLines = 1,
+                    maxLines = 5,
+                    shape = RoundedCornerShape(17.dp),
+                    colors = fieldColors(),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Text,
+                        imeAction = androidx.compose.ui.text.input.ImeAction.Send
+                    ),
+                    keyboardActions = androidx.compose.foundation.text.KeyboardActions(
+                        onSend = { if (canSend) send() }
+                    )
+                )
+                Spacer(Modifier.width(4.dp))
+                IconButton(
+                    onClick = voice,
+                    enabled = enabled,
+                    modifier = Modifier.padding(bottom = 3.dp).size(40.dp)
+                ) {
+                    Icon(Icons.Default.Mic, "Voice input", tint = if (enabled) Cyan else Muted)
+                }
+                IconButton(
+                    onClick = send,
+                    enabled = canSend,
+                    modifier = Modifier.padding(bottom = 3.dp).size(42.dp)
+                        .background(if (canSend) Violet else Panel2, CircleShape)
+                ) {
+                    Icon(Icons.Default.ArrowUpward, "Send", tint = White)
+                }
             }
         }
     }
 }
-
 @Composable
 private fun Heading(title:String,subtitle:String) {
     Column(Modifier.fillMaxWidth().padding(top=6.dp,bottom=16.dp)) {
