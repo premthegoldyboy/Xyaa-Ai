@@ -77,6 +77,13 @@ test('Android chat renders structured Markdown and selectable code blocks', () =
 });
 
 
+test('spoken chat transcript enters smoothly and bubble growth is animated', () => {
+  const ui = readFileSync(new URL('../app/src/main/java/ai/xyaa/assistant/XyaaPremiumUi.kt', import.meta.url), 'utf8');
+  assert.match(ui, /AnimatedVisibility/);
+  assert.match(ui, /fadeIn\(animationSpec = tween\(220\)\)/);
+  assert.match(ui, /\.animateContentSize\(animationSpec = tween\(110\)\)/);
+});
+
 test('chat keeps streamed replies anchored at the bottom and avoids repetitive identity intros', () => {
   const ui = readFileSync(new URL('../app/src/main/java/ai/xyaa/assistant/XyaaPremiumUi.kt', import.meta.url), 'utf8');
   const activity = readFileSync(new URL('../app/src/main/java/ai/xyaa/assistant/MainActivity.kt', import.meta.url), 'utf8');
