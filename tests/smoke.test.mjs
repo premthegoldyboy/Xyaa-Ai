@@ -56,3 +56,12 @@ test('conversation-memory agent retrieves existing turns rather than inventing h
   assert.match(router, /memory\.recentTurns\(\)\.dropLast\(1\)/);
   assert.match(router, /couldn't find that detail in the recent conversation/);
 });
+
+test('PDF intent recognizes export-as-PDF phrasing and keeps research separate', () => {
+  const docs = readFileSync(new URL('../app/src/main/java/ai/xyaa/assistant/DocumentAgents.kt', import.meta.url), 'utf8');
+  assert.match(docs, /as\\\\s\+\(\?:a/);
+  assert.match(docs, /save\|convert/);
+  const router = readFileSync(new URL('../app/src/main/java/ai/xyaa/assistant/XYAAAgentOrchestrator.kt', import.meta.url), 'utf8');
+  assert.match(router, /val research = explicitResearch \|\| PdfAgent\.needsResearch/);
+  assert.match(router, /what was \(\?:that\|my\)/);
+});

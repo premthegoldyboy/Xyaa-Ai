@@ -71,14 +71,14 @@ object XYAAAgentOrchestrator {
 /** Retrieves a real prior turn; it never fabricates conversation history. */
 object ConversationMemoryAgent {
     fun matches(prompt: String): Boolean =
-        Regex("\\b(what did i (?:say|ask|tell you)|do you remember|remember when|what was (?:the|that|my)|recall (?:our|the|my)|earlier i asked|previous conversation)\\b",
+        Regex("\\b(what did i (?:say|ask|tell you)|do you remember|remember when|what was (?:that|my)|what was the (?:name|title|topic|thing|product|phone|device|app|book|file|model)\\b|recall (?:our|the|my)|earlier i asked|previous conversation)\\b",
             RegexOption.IGNORE_CASE).containsMatchIn(prompt)
 
     fun execute(prompt: String, memory: ConversationMemory): String? {
         val turns = memory.recentTurns().dropLast(1)
         if (turns.isEmpty()) return "I don't have an earlier conversation to recall yet."
         val lower = prompt.lowercase(Locale.ROOT)
-        val broadRecall = Regex("\\b(what did i (?:say|ask|tell you)|what was (?:the|that|my)|previous conversation|earlier i asked|do you remember)\\b")
+        val broadRecall = Regex("\\b(what did i (?:say|ask|tell you)|what was (?:that|my)|what was the (?:name|title|topic|thing|product|phone|device|app|book|file|model)\\b|previous conversation|earlier i asked|do you remember)\\b")
             .containsMatchIn(lower)
         val ignored = setOf("what", "when", "where", "which", "that", "this", "with", "from", "about", "have", "were", "your", "tell", "said", "asked", "remember", "earlier", "previous", "conversation", "xyaa")
         val terms = Regex("[a-z0-9]{4,}").findAll(lower).map { it.value }.filterNot { it in ignored }.toSet()
