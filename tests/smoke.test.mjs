@@ -65,3 +65,13 @@ test('PDF intent recognizes export-as-PDF phrasing and keeps research separate',
   assert.match(router, /val research = explicitResearch \|\| PdfAgent\.needsResearch/);
   assert.match(router, /what was \(\?:that\|my\)/);
 });
+
+
+test('Android chat renders structured Markdown and selectable code blocks', () => {
+  const ui = readFileSync(new URL('../app/src/main/java/ai/xyaa/assistant/XyaaPremiumUi.kt', import.meta.url), 'utf8');
+  assert.match(ui, /private fun MarkdownMessage/);
+  assert.match(ui, /SelectionContainer/);
+  assert.match(ui, /Copy code/);
+  assert.match(ui, /horizontalScroll/);
+  assert.match(ui, /buildMarkdownInline/);
+});
