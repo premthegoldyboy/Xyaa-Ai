@@ -142,28 +142,24 @@ class NeuralVoiceEngine(private val context: Context, private val onStatus: (Str
                     val transcript = text.substring(0, minOf(text.length, chunkStart + chunk.length))
                     val first = index == 0
                     slots.acquire()
-                    lastPlayback.set(playbackExecutor.submit(Runnable {
-                        var startFrame = 0L
-                        var target = 0L
+                    // Start transcript tracking before the blocking AudioTrack write. If it
+                    // starts after play() returns, buffered audio may already have drained.
+                    val startFrame = framesWritten.get()
+                    val targetFrame = startFrame + audio.samples.size
+                    lastReveal.set(revealExecutor.submit(Runnable {
                         try {
-                            if (stale()) return@Runnable
-                            startFrame = framesWritten.get()
-                            play(audio.samples, audio.sampleRate, first, framesWritten, ::stale)
-                            target = framesWritten.get()
+                            val revealed = revealDuringPlayback(startFrame, targetFrame, chunkStart, chunk, text, ::stale, onChunk)
+                            if (!stale() && revealed) playedChars.set(chunkStart + chunk.length)
+                        } catch (t: Throwable) {
+                            playbackError.compareAndSet(null, t)
+                        }
+                    }))
+                    lastPlayback.set(playbackExecutor.submit(Runnable {
+                        try {
+                            if (!stale()) play(audio.samples, audio.sampleRate, first, framesWritten, ::stale)
                         } catch (t: Throwable) {
                             playbackError.compareAndSet(null, t)
                         } finally { slots.release() }
-                        if (target <= startFrame || stale()) return@Runnable
-                        // Reveal word boundaries continuously as the playback head advances. The
-                        // transcript therefore follows the voice instead of appearing at utterance end.
-                        lastReveal.set(revealExecutor.submit(Runnable {
-                            try {
-                                val revealed = revealDuringPlayback(startFrame, target, chunkStart, chunk, text, ::stale, onChunk)
-                                if (!stale() && revealed) playedChars.set(chunkStart + chunk.length)
-                            } catch (t: Throwable) {
-                                playbackError.compareAndSet(null, t)
-                            }
-                        }))
                     }))
                 }
                 lastPlayback.get()?.get()
@@ -207,22 +203,34 @@ class NeuralVoiceEngine(private val context: Context, private val onStatus: (Str
         stale: () -> Boolean,
         onChunk: (String) -> Unit
     ): Boolean {
-        val track = audioTrack ?: return false
+        // Wait until AudioTrack has actually begun advancing before starting the
+        // elapsed-time fallback; otherwise synthesis/queue delay could reveal text early.
+        var output: AudioTrack? = null
+        var initialHead = 0L
+        val startDeadline = SystemClock.elapsedRealtime() + 5000L
+        while (!stale() && SystemClock.elapsedRealtime() < startDeadline) {
+            output = audioTrack
+            if (output != null && output.state == AudioTrack.STATE_INITIALIZED) {
+                initialHead = (playbackHead(output) - startFrame).coerceAtLeast(0L)
+                if (initialHead > 0L) break
+            }
+            Thread.sleep(10)
+        }
+        if (stale() || output == null || initialHead <= 0L) return false
+
         val durationFrames = (endFrame - startFrame).coerceAtLeast(1L)
-        // Some vendor AudioTrack implementations report a frozen playback head for streamed PCM.
-        // Use elapsed audio time as a monotonic fallback, anchored to any real progress already seen.
-        val initialHeadFrames = (playbackHead(track) - startFrame).coerceIn(0L, durationFrames)
         val revealStartedAt = SystemClock.elapsedRealtime()
-        val deadline = revealStartedAt + (durationFrames * 1000L / track.sampleRate) + 2200L
+        val deadline = revealStartedAt + (durationFrames * 1000L / output.sampleRate) + 2200L
         var lastVisible = 0
         while (!stale() && SystemClock.elapsedRealtime() < deadline) {
-            val actualFrames = (playbackHead(track) - startFrame).coerceIn(0L, durationFrames)
-            val elapsedFrames = initialHeadFrames +
-                ((SystemClock.elapsedRealtime() - revealStartedAt) * track.sampleRate / 1000L)
+            val actualFrames = (playbackHead(output) - startFrame).coerceIn(0L, durationFrames)
+            // Prefer the real playback head; elapsed audio time is a fallback for
+            // devices whose streamed AudioTrack playback-head counter freezes.
+            val elapsedFrames = initialHead +
+                ((SystemClock.elapsedRealtime() - revealStartedAt) * output.sampleRate / 1000L)
             val playedFrames = maxOf(actualFrames, elapsedFrames).coerceIn(0L, durationFrames)
-            val fraction = playedFrames.toFloat() / durationFrames.toFloat()
-            val estimated = (chunk.length * fraction).toInt().coerceIn(0, chunk.length)
-            // Avoid exposing half a word; reveal only complete words.
+            val estimated = (chunk.length * playedFrames.toFloat() / durationFrames.toFloat())
+                .toInt().coerceIn(0, chunk.length)
             var visible = estimated
             if (visible < chunk.length) {
                 while (visible > 0 && !chunk[visible - 1].isWhitespace()) visible--
@@ -232,7 +240,7 @@ class NeuralVoiceEngine(private val context: Context, private val onStatus: (Str
                 onChunk(fullText.substring(0, minOf(fullText.length, chunkStart + visible)).trimEnd())
             }
             if (playedFrames >= durationFrames) break
-            Thread.sleep(35)
+            Thread.sleep(30)
         }
         if (stale()) return false
         onChunk(fullText.substring(0, minOf(fullText.length, chunkStart + chunk.length)))
