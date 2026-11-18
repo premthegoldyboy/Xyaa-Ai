@@ -27,6 +27,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -500,17 +501,9 @@ private fun ChatPage(
                                             RoundedCornerShape(5.dp,18.dp,18.dp,18.dp))
                                     ) {
                                         val display = AssistantTextFormatter.forDisplay(text)
-                                        val visible = remember(display) { buildLinkedText(display) }
-                                        val uriHandler = LocalUriHandler.current
-                                        ClickableText(
-                                            text = visible,
-                                            modifier = Modifier.padding(horizontal = 15.dp, vertical = 14.dp),
-                                            style = TextStyle(color = White, fontSize = 14.sp, lineHeight = 22.sp),
-                                            onClick = { offset ->
-                                                visible.getStringAnnotations("URL", offset, offset).firstOrNull()?.let {
-                                                    runCatching { uriHandler.openUri(it.item) }
-                                                }
-                                            }
+                                        MarkdownMessage(
+                                            raw = display,
+                                            modifier = Modifier.padding(horizontal = 15.dp, vertical = 14.dp)
                                         )
                                     }
                                     Row(
@@ -569,6 +562,168 @@ private fun ChatPage(
             keyboard?.hide()
         }, voice, !busy)
         Spacer(Modifier.height(6.dp))
+    }
+}
+
+@Composable
+private fun MarkdownMessage(raw: String, modifier: Modifier = Modifier) {
+    val uriHandler = LocalUriHandler.current
+    val clipboard = LocalClipboardManager.current
+    val lines = remember(raw) { raw.lines() }
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(7.dp)) {
+        var index = 0
+        while (index < lines.size) {
+            val line = lines[index]
+            if (line.trim().startsWith("```")) {
+                val code = StringBuilder()
+                index++
+                while (index < lines.size && !lines[index].trim().startsWith("```")) {
+                    if (code.isNotEmpty()) code.append('\n')
+                    code.append(lines[index])
+                    index++
+                }
+                if (index < lines.size) index++
+                Surface(
+                    color = Color(0xFF0B0A14),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth().border(1.dp, Line, RoundedCornerShape(12.dp))
+                ) {
+                    Column(Modifier.padding(10.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("CODE", color = Cyan, fontSize = 8.sp, fontWeight = FontWeight.Bold,
+                                letterSpacing = 1.2.sp, modifier = Modifier.weight(1f))
+                            TextButton(onClick = { clipboard.setText(AnnotatedString(code.toString())) },
+                                contentPadding = PaddingValues(horizontal = 5.dp, vertical = 0.dp)) {
+                                Icon(Icons.Default.ContentCopy, null, tint = Muted, modifier = Modifier.size(12.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("Copy code", color = Muted, fontSize = 9.sp)
+                            }
+                        }
+                        SelectionContainer {
+                            Text(code.toString(), color = Color(0xFFB8F4E7), fontSize = 11.sp,
+                                lineHeight = 17.sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
+                        }
+                    }
+                }
+                continue
+            }
+            if (line.trim().startsWith("|") && index + 1 < lines.size &&
+                lines[index + 1].trim().matches(Regex("\\|?\\s*:?-{3,}:?\\s*(\\|\\s*:?-{3,}:?\\s*)+\\|?"))) {
+                val headers = line.trim().trim('|').split('|').map { it.trim() }
+                index += 2
+                val rows = mutableListOf<List<String>>()
+                while (index < lines.size && lines[index].trim().startsWith("|")) {
+                    rows.add(lines[index].trim().trim('|').split('|').map { it.trim() })
+                    index++
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    (listOf(headers) + rows).forEachIndexed { rowIndex, cells ->
+                        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            cells.forEachIndexed { cellIndex, cell ->
+                                Surface(
+                                    color = if (rowIndex == 0) Color(0xFF30234A) else Panel2,
+                                    shape = RoundedCornerShape(7.dp),
+                                    modifier = Modifier.widthIn(min = 88.dp).weight(1f, fill = false)
+                                ) {
+                                    Text(cell, Modifier.padding(horizontal = 8.dp, vertical = 7.dp),
+                                        color = if (rowIndex == 0) Cyan else White,
+                                        fontSize = 10.sp, lineHeight = 14.sp,
+                                        fontWeight = if (rowIndex == 0) FontWeight.Bold else FontWeight.Normal)
+                                }
+                            }
+                        }
+                    }
+                }
+                continue
+            }
+            when {
+                line.isBlank() -> Spacer(Modifier.height(1.dp))
+                line.trimStart().startsWith("#") -> {
+                    val title = line.trimStart().dropWhile { it == '#' }.trim()
+                    Text(title, color = White, fontSize = if (line.trimStart().startsWith("###")) 13.sp else 16.sp,
+                        fontWeight = FontWeight.Bold, lineHeight = 21.sp)
+                }
+                line.trimStart().matches(Regex("[-*+]\\s+.*")) -> {
+                    Row(verticalAlignment = Alignment.Top) {
+                        Text("•", color = Cyan, fontSize = 15.sp, modifier = Modifier.padding(end = 7.dp))
+                        MarkdownInlineText(line.trimStart().drop(2), uriHandler, Modifier.weight(1f))
+                    }
+                }
+                line.trimStart().matches(Regex("\\d+[.)]\\s+.*")) -> {
+                    val match = Regex("^(\\d+[.)])\\s+(.*)$").find(line.trimStart())
+                    Row(verticalAlignment = Alignment.Top) {
+                        Text(match?.groupValues?.get(1).orEmpty(), color = Cyan, fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold, modifier = Modifier.padding(end = 7.dp))
+                        MarkdownInlineText(match?.groupValues?.get(2).orEmpty(), uriHandler, Modifier.weight(1f))
+                    }
+                }
+                else -> MarkdownInlineText(line, uriHandler)
+            }
+            index++
+        }
+    }
+}
+
+@Composable
+private fun MarkdownInlineText(
+    raw: String,
+    uriHandler: androidx.compose.ui.platform.UriHandler,
+    modifier: Modifier = Modifier
+) {
+    val annotated = remember(raw) { buildMarkdownInline(raw) }
+    ClickableText(
+        text = annotated,
+        modifier = modifier.fillMaxWidth(),
+        style = TextStyle(color = White, fontSize = 13.sp, lineHeight = 20.sp),
+        onClick = { offset ->
+            annotated.getStringAnnotations("URL", offset, offset).firstOrNull()?.let {
+                runCatching { uriHandler.openUri(it.item) }
+            }
+        }
+    )
+}
+
+private fun buildMarkdownInline(raw: String): AnnotatedString {
+    val token = Regex("(\\*\\*[^*]+\\*\\*|\\*[^*]+\\*|`[^`]+`|https?://[^\\s<>]+)", RegexOption.IGNORE_CASE)
+    return buildAnnotatedString {
+        var cursor = 0
+        token.findAll(raw).forEach { match ->
+            append(raw.substring(cursor, match.range.first))
+            val value = match.value
+            when {
+                value.startsWith("**") -> {
+                    pushStyle(SpanStyle(fontWeight = FontWeight.Bold, color = White))
+                    append(value.removePrefix("**").removeSuffix("**"))
+                    pop()
+                }
+                value.startsWith("*") -> {
+                    pushStyle(SpanStyle(fontStyle = androidx.compose.ui.text.font.FontStyle.Italic))
+                    append(value.removePrefix("*").removeSuffix("*"))
+                    pop()
+                }
+                value.startsWith("`") -> {
+                    pushStyle(SpanStyle(
+                        color = Color(0xFFB8F4E7),
+                        background = Color(0xFF29243A),
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                    ))
+                    append(value.removeSurrounding("`"))
+                    pop()
+                }
+                else -> {
+                    val url = value.trimEnd('.', ',', ')', ']', ';')
+                    val trailing = value.removePrefix(url)
+                    pushStringAnnotation("URL", url)
+                    pushStyle(SpanStyle(color = Cyan, textDecoration = TextDecoration.Underline))
+                    append(url)
+                    pop()
+                    pop()
+                    append(trailing)
+                }
+            }
+            cursor = match.range.last + 1
+        }
+        if (cursor < raw.length) append(raw.substring(cursor))
     }
 }
 
