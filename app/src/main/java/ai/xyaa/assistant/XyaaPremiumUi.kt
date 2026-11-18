@@ -501,7 +501,7 @@ private fun ChatPage(
                                         modifier = Modifier.fillMaxWidth().border(1.dp, Line,
                                             RoundedCornerShape(5.dp,18.dp,18.dp,18.dp))
                                     ) {
-                                        val display = AssistantTextFormatter.forDisplay(text)
+                                        val display = AssistantTextFormatter.forRichDisplay(text)
                                         MarkdownMessage(
                                             raw = display,
                                             modifier = Modifier.padding(horizontal = 15.dp, vertical = 14.dp)

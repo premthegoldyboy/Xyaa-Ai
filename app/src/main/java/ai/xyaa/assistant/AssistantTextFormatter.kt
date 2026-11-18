@@ -9,6 +9,18 @@ internal object AssistantTextFormatter {
     private val hiddenBlocks = Regex("(?is)<(think|analysis|reasoning|tool_call|function_call)>.*?</\\1>")
     private val markdownLink = Regex("\\[([^\\]]+)]\\((https?://[^)]+)\\)")
 
+    /** Removes protocol noise while preserving Markdown for the rich chat renderer. */
+    fun forRichDisplay(raw: String): String {
+        if (raw.isBlank()) return ""
+        return raw
+            .replace(hiddenBlocks, "")
+            .replace(Regex("(?i)\\*{0,2}SPOKEN:\\*{0,2}\\s*"), "")
+            .replace(Regex("(?im)^\\s*(?:internal|background|debug|tool)\\s*(?:status|note)?\\s*:\\s*.*$"), "")
+            .replace(Regex("(?im)^\\s*(?:assistant|system|developer)\\s*:\\s*"), "")
+            .replace(Regex("\\n{3,}"), "\\n\\n")
+            .trim()
+    }
+
     fun forDisplay(raw: String): String {
         if (raw.isBlank()) return ""
         return raw
