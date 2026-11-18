@@ -6,6 +6,7 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -50,6 +51,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 private val Bg = Color(0xFF080812)
 private val Panel = Color(0xFF151126)
@@ -358,12 +360,30 @@ private fun ChatPage(
     val imeOpen = WindowInsets.ime.getBottom(LocalDensity.current) > 0
     val lastUserPrompt = messages.lastOrNull { it.second }?.first.orEmpty()
 
-    // Keep the newest message anchored at the bottom. scrollToItem(lastIndex) alone
-    // aligns the last row to the TOP of the viewport, making streamed replies appear
-    // to jump upward while text is still arriving.
+    // Follow streamed output only while the reader is already near the bottom.
+    // Measuring the last visible row and applying its exact overflow avoids the
+    // large, repeated Int.MAX_VALUE scroll offsets that caused streaming jumps.
+    var followOutput by remember { mutableStateOf(true) }
+    LaunchedEffect(listState) {
+        snapshotFlow {
+            val layout = listState.layoutInfo
+            val last = layout.visibleItemsInfo.lastOrNull()
+            last != null &&
+                last.index == layout.totalItemsCount - 1 &&
+                last.offset + last.size <= layout.viewportEndOffset + 96
+        }.distinctUntilChanged().collect { nearBottom ->
+            followOutput = nearBottom
+        }
+    }
     LaunchedEffect(messages.size, messages.lastOrNull()?.first, imeOpen) {
-        if (messages.isNotEmpty()) {
-            listState.scrollToItem(messages.lastIndex, scrollOffset = Int.MAX_VALUE)
+        if (messages.isNotEmpty() && followOutput) {
+            withFrameNanos { }
+            val layout = listState.layoutInfo
+            val last = layout.visibleItemsInfo.lastOrNull { it.index == messages.lastIndex }
+            if (last != null) {
+                val overflow = last.offset + last.size - layout.viewportEndOffset
+                if (overflow > 0) listState.scrollBy(overflow.toFloat())
+            }
         }
     }
 
