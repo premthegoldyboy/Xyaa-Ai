@@ -158,8 +158,8 @@ class NeuralVoiceEngine(private val context: Context, private val onStatus: (Str
                         // transcript therefore follows the voice instead of appearing at utterance end.
                         lastReveal.set(revealExecutor.submit(Runnable {
                             try {
-                                revealDuringPlayback(startFrame, target, chunkStart, chunk, text, ::stale, onChunk)
-                                if (!stale() && drained(target)) playedChars.set(chunkStart + chunk.length)
+                                val revealed = revealDuringPlayback(startFrame, target, chunkStart, chunk, text, ::stale, onChunk)
+                                if (!stale() && revealed) playedChars.set(chunkStart + chunk.length)
                             } catch (t: Throwable) {
                                 playbackError.compareAndSet(null, t)
                             }
@@ -206,16 +206,23 @@ class NeuralVoiceEngine(private val context: Context, private val onStatus: (Str
         fullText: String,
         stale: () -> Boolean,
         onChunk: (String) -> Unit
-    ) {
-        val track = audioTrack ?: return
+    ): Boolean {
+        val track = audioTrack ?: return false
         val durationFrames = (endFrame - startFrame).coerceAtLeast(1L)
-        val deadline = SystemClock.elapsedRealtime() + (durationFrames * 1000L / track.sampleRate) + 2000L
+        // Some vendor AudioTrack implementations report a frozen playback head for streamed PCM.
+        // Use elapsed audio time as a monotonic fallback, anchored to any real progress already seen.
+        val initialHeadFrames = (playbackHead(track) - startFrame).coerceIn(0L, durationFrames)
+        val revealStartedAt = SystemClock.elapsedRealtime()
+        val deadline = revealStartedAt + (durationFrames * 1000L / track.sampleRate) + 2200L
         var lastVisible = 0
         while (!stale() && SystemClock.elapsedRealtime() < deadline) {
-            val playedFrames = (playbackHead(track) - startFrame).coerceIn(0L, durationFrames)
+            val actualFrames = (playbackHead(track) - startFrame).coerceIn(0L, durationFrames)
+            val elapsedFrames = initialHeadFrames +
+                ((SystemClock.elapsedRealtime() - revealStartedAt) * track.sampleRate / 1000L)
+            val playedFrames = maxOf(actualFrames, elapsedFrames).coerceIn(0L, durationFrames)
             val fraction = playedFrames.toFloat() / durationFrames.toFloat()
             val estimated = (chunk.length * fraction).toInt().coerceIn(0, chunk.length)
-            // Avoid exposing half a word; move the reveal point back to the last word boundary.
+            // Avoid exposing half a word; reveal only complete words.
             var visible = estimated
             if (visible < chunk.length) {
                 while (visible > 0 && !chunk[visible - 1].isWhitespace()) visible--
@@ -227,9 +234,9 @@ class NeuralVoiceEngine(private val context: Context, private val onStatus: (Str
             if (playedFrames >= durationFrames) break
             Thread.sleep(35)
         }
-        if (!stale() && playbackHead(track) >= endFrame) {
-            onChunk(fullText.substring(0, minOf(fullText.length, chunkStart + chunk.length)))
-        }
+        if (stale()) return false
+        onChunk(fullText.substring(0, minOf(fullText.length, chunkStart + chunk.length)))
+        return true
     }
 
     /** True when the track has really played [frames] frames (false if it was flushed or timed out). */
