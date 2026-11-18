@@ -543,32 +543,16 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 }
                 report.onSuccess { result ->
                     val rendered = result.asText()
-                    val spokenSummary = result.spoken.ifBlank { "Research report completed." }
-                    if (pdfRequest) {
-                        pdfDraft = rendered
-                        rememberTurn("assistant", "Created a research-backed PDF about ${result.topic}.")
-                        runOnUiThread {
-                            answer("Preparing your PDF…", false)
-                            // The complete document belongs in the PDF, not duplicated in the chat bubble.
-                            openPdfPicker()
-                            speakChatAnswer(
-                                spokenSummary,
-                                onProgress = { visible -> answer(visible, false) },
-                                onComplete = {
-                                    answer("$spokenSummary\n\nPDF ready. Choose a location to save it.", true)
-                                }
-                            )
-                        }
-                    } else {
-                        rememberTurn("assistant", spokenSummary)
-                        runOnUiThread {
-                            answer("Research complete. Speaking the summary…", false)
-                            speakChatAnswer(
-                                spokenSummary,
-                                onProgress = { visible -> answer(visible, false) },
-                                onComplete = { answer(rendered, true) }
-                            )
-                        }
+                    rememberTurn("assistant", result.spoken.ifBlank { rendered.take(520) })
+                    if (pdfRequest) pdfDraft = rendered
+                    runOnUiThread {
+                        answer(rendered, false)
+                        // Request the save destination as soon as the document exists; saving must
+                        // not depend on the user waiting for the spoken summary to finish.
+                        if (pdfRequest) openPdfPicker()
+                        speakChatAnswer(result.spoken.ifBlank { "Research report completed." },
+                            onProgress = { visible -> answer(visible, false) },
+                            onComplete = { answer(rendered, true) })
                     }
                 }.onFailure { error ->
                     val message = "Research failed: ${error.message.orEmpty().take(180)}"
@@ -594,21 +578,17 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 }
             }.getOrElse { formatAiError(it) }
 
-            if (pdfRequest) rememberTurn("assistant", "Created the requested PDF document.")
-            else rememberTurn("assistant", response)
+            rememberTurn("assistant", response)
             runOnUiThread {
+                // The complete answer is now available; text begins revealing only as speech starts.
+                answer("Speaking…", false)
                 if (pdfRequest && response.isNotBlank()) {
                     pdfDraft = response
-                    answer("Your PDF is ready. Choose a location to save it.", true)
                     openPdfPicker()
-                    speakChatAnswer("Your PDF is ready. Choose a location to save it.")
-                } else {
-                    // Reveal the same transcript progressively as the speech engine advances.
-                    answer("Speaking…", false)
-                    speakChatAnswer(response,
-                        onProgress = { visible -> answer(visible, false) },
-                        onComplete = { answer(response, true) })
                 }
+                speakChatAnswer(response,
+                    onProgress = { visible -> answer(visible, false) },
+                    onComplete = { answer(response, true) })
             }
         }.start()
     }
@@ -625,134 +605,53 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
 
     private fun writePdf(uri: android.net.Uri) {
         val document = PdfDocument()
+        val bodyPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = android.graphics.Color.rgb(42, 40, 52)
+            textSize = 11f
+        }
+        val headingPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = android.graphics.Color.rgb(48, 35, 82)
+            textSize = 18f
+            isFakeBoldText = true
+        }
         val pageWidth = 595
         val pageHeight = 842
         val margin = 48
         val contentWidth = pageWidth - margin * 2
-        val bodyPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = android.graphics.Color.rgb(43, 42, 53)
-            textSize = 10.8f
-            typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.NORMAL)
-            // Disable ligatures: some Android PDF font maps otherwise lose combined glyphs on extraction.
-            fontFeatureSettings = "'liga' 0, 'clig' 0"
-        }
-        val h1Paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = android.graphics.Color.rgb(45, 32, 78)
-            textSize = 21f
-            typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.BOLD)
-            fontFeatureSettings = "'liga' 0, 'clig' 0"
-        }
-        val h2Paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = android.graphics.Color.rgb(68, 48, 112)
-            textSize = 15f
-            typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
-            fontFeatureSettings = "'liga' 0, 'clig' 0"
-        }
-        val h3Paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = android.graphics.Color.rgb(76, 72, 94)
-            textSize = 12f
-            typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.BOLD)
-            fontFeatureSettings = "'liga' 0, 'clig' 0"
-        }
-        val metaPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = android.graphics.Color.rgb(119, 112, 137)
-            textSize = 8.5f
-            typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.NORMAL)
-            fontFeatureSettings = "'liga' 0, 'clig' 0"
-        }
         var pageNumber = 0
-        fun beginPage(): PdfDocument.Page {
-            pageNumber++
-            val next = document.startPage(PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pageNumber).create())
-            next.canvas.drawText("XYAA  /  RESEARCH DOCUMENT", margin.toFloat(), 31f, metaPaint)
-            val rule = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = android.graphics.Color.rgb(224, 220, 234)
-                strokeWidth = 0.8f
-            }
-            next.canvas.drawLine(margin.toFloat(), 42f, (pageWidth - margin).toFloat(), 42f, rule)
-            return next
-        }
-        var page = beginPage()
-        var y = 62f
-        fun finishPage() {
-            val rule = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = android.graphics.Color.rgb(224, 220, 234)
-                strokeWidth = 0.8f
-            }
-            page.canvas.drawLine(margin.toFloat(), (pageHeight - 38).toFloat(),
-                (pageWidth - margin).toFloat(), (pageHeight - 38).toFloat(), rule)
-            page.canvas.drawText("Prepared with XYAA", margin.toFloat(), (pageHeight - 22).toFloat(), metaPaint)
-            val pageLabel = "Page $pageNumber"
-            page.canvas.drawText(pageLabel, pageWidth - margin - metaPaint.measureText(pageLabel),
-                (pageHeight - 22).toFloat(), metaPaint)
-            document.finishPage(page)
-        }
+        var page = document.startPage(PdfDocument.PageInfo.Builder(pageWidth, pageHeight, ++pageNumber).create())
+        var y = 54f
         fun nextPage() {
-            finishPage()
-            page = beginPage()
-            y = 62f
-        }
-        fun drawBlock(text: String, paint: TextPaint, before: Float = 0f, after: Float = 6f) {
-            if (text.isBlank()) { y += 5f; return }
-            val layout = StaticLayout.Builder.obtain(text, 0, text.length, paint, contentWidth)
-                .setAlignment(Layout.Alignment.ALIGN_NORMAL)
-                .setIncludePad(false)
-                .setLineSpacing(3f, 1.0f)
-                .setBreakStrategy(Layout.BREAK_STRATEGY_HIGH_QUALITY)
-                .setHyphenationFrequency(Layout.HYPHENATION_FREQUENCY_NORMAL)
-                .build()
-            y += before
-            if (y + layout.height + after > pageHeight - 58) nextPage()
-            page.canvas.save()
-            page.canvas.translate(margin.toFloat(), y)
-            layout.draw(page.canvas)
-            page.canvas.restore()
-            y += layout.height + after
+            document.finishPage(page)
+            page = document.startPage(PdfDocument.PageInfo.Builder(pageWidth, pageHeight, ++pageNumber).create())
+            y = 54f
         }
         try {
-            val lines = pdfDraft.replace("\r", "").lines()
-            val tableRow = Regex("^\\s*\\|.*\\|\\s*$")
-            var index = 0
-            while (index < lines.size) {
-                val raw = lines[index].trim()
-                if (raw.isBlank()) {
-                    y += 5f
-                    index++
-                    continue
-                }
-                if (tableRow.matches(raw)) {
-                    val cells = raw.trim('|').split('|').map { it.trim() }
-                    val separator = cells.all { it.matches(Regex(":?-{3,}:?")) }
-                    if (!separator) {
-                        val label = cells.firstOrNull().orEmpty()
-                        val detail = cells.drop(1).filter { it.isNotBlank() }.joinToString("  ·  ")
-                        drawBlock(if (detail.isBlank()) label else "$label:  $detail",
-                            bodyPaint, before = 1f, after = 5f)
-                    }
-                    index++
-                    continue
-                }
-                val heading = Regex("^(#{1,6})\\s*(.*)$").matchEntire(raw)
-                if (heading != null) {
-                    val level = heading.groupValues[1].length
-                    val title = heading.groupValues[2].trim()
-                    when (level) {
-                        1 -> drawBlock(title, h1Paint, before = 14f, after = 11f)
-                        2 -> drawBlock(title, h2Paint, before = 13f, after = 7f)
-                        else -> drawBlock(title, h3Paint, before = 10f, after = 5f)
-                    }
+            pdfDraft.replace("\r", "").lines().forEach { raw ->
+                val line = raw.trim()
+                if (line.isBlank()) {
+                    y += 8f
                 } else {
-                    val bullet = Regex("^([-*+]\\s+|\\d+[.)]\\s+)").containsMatchIn(raw)
-                    val clean = raw.replace(Regex("^[-*+]\\s+"), "• ")
-                        .replace(Regex("^(\\d+[.)])\\s+"), "$1  ")
-                        .replace(Regex("\\*{1,3}([^*]+)\\*{1,3}"), "$1")
-                        .replace(Regex("\\u0060([^\\u0060]+)\\u0060"), "$1")
-                    drawBlock(clean, bodyPaint, before = if (bullet) 1f else 2f, after = if (bullet) 5f else 7f)
+                    val isHeading = line.startsWith("#")
+                    val clean = line.replace(Regex("^#{1,6}\\s*"), "")
+                        .replace(Regex("^[-*]\\s+"), "• ")
+                    val paint = if (isHeading) headingPaint else bodyPaint
+                    val layout = StaticLayout.Builder.obtain(clean, 0, clean.length, paint, contentWidth)
+                        .setAlignment(Layout.Alignment.ALIGN_NORMAL)
+                        .setIncludePad(false)
+                        .setLineSpacing(2f, 1f)
+                        .build()
+                    val blockHeight = layout.height + if (isHeading) 8 else 4
+                    if (y + blockHeight > pageHeight - margin) nextPage()
+                    page.canvas.save()
+                    page.canvas.translate(margin.toFloat(), y)
+                    layout.draw(page.canvas)
+                    page.canvas.restore()
+                    y += blockHeight
                 }
-                index++
             }
-            finishPage()
-            contentResolver.openOutputStream(uri)?.use { output -> document.writeTo(output) }
+            document.finishPage(page)
+            contentResolver.openOutputStream(uri)?.use { document.writeTo(it) }
                 ?: error("Could not open the selected save location")
         } finally {
             document.close()

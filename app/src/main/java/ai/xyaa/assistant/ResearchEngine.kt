@@ -31,17 +31,25 @@ class ResearchEngine(
 
     fun research(topic: String, onStatus: (String) -> Unit = {}): Report {
         require(topic.isNotBlank()) { "Enter a research topic." }
+        var geminiFailure: Throwable? = null
         if (!geminiKey.isNullOrBlank()) {
             try {
                 onStatus("Researching with Gemini Search…")
                 return researchWithGemini(topic)
-            } catch (_: Throwable) {
+            } catch (error: Throwable) {
+                geminiFailure = error
                 // A configured Tavily key enables an independent search fallback.
             }
         }
         if (!tavilyKey.isNullOrBlank()) {
             onStatus("Switching to backup web search…")
             return researchWithTavily(topic, onStatus)
+        }
+        if (geminiFailure != null) {
+            throw IllegalStateException(
+                "Google Search did not return a source-verified report. Add a Tavily key for independent search fallback, then retry.",
+                geminiFailure
+            )
         }
         throw IllegalStateException("Research needs a Gemini API key or a Tavily search key.")
     }
