@@ -58,6 +58,26 @@ class CodeStudioTaskStore(context: Context) {
         updated
     }
 
+    fun setPlanning(id: String): Task? = synchronized(lock) {
+        val tasks = readUnsafe().toMutableList()
+        val index = tasks.indexOfFirst { it.id == id }
+        if (index < 0) return@synchronized null
+        val updated = tasks[index].copy(status = "Planning…", updatedAt = System.currentTimeMillis())
+        tasks[index] = updated
+        writeUnsafe(tasks)
+        updated
+    }
+
+    fun setPlanningFailed(id: String): Task? = synchronized(lock) {
+        val tasks = readUnsafe().toMutableList()
+        val index = tasks.indexOfFirst { it.id == id }
+        if (index < 0) return@synchronized null
+        val updated = tasks[index].copy(status = "Planning failed · check provider settings", updatedAt = System.currentTimeMillis())
+        tasks[index] = updated
+        writeUnsafe(tasks)
+        updated
+    }
+
     /** Persist an AI-generated plan; planning never executes code or changes a repository. */
     fun savePlan(id: String, plan: String): Task? = synchronized(lock) {
         val cleaned = plan.trim().take(12000)
