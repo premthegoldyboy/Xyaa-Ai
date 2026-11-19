@@ -123,3 +123,30 @@ test('Gemini Live voice uses XYAA playful personality and natural expressive del
   assert.match(live, /without mocking, flirting, or pretending to be human/);
   assert.match(live, /never claim to have done something you did not do/);
 });
+
+
+test('personal memory is encrypted, explicit, bounded, and independently controllable', () => {
+  const store = readFileSync(new URL('../app/src/main/java/ai/xyaa/assistant/PersonalMemoryStore.kt', import.meta.url), 'utf8');
+  const activity = readFileSync(new URL('../app/src/main/java/ai/xyaa/assistant/MainActivity.kt', import.meta.url), 'utf8');
+  const ui = readFileSync(new URL('../app/src/main/java/ai/xyaa/assistant/XyaaPremiumUi.kt', import.meta.url), 'utf8');
+  assert.match(store, /AndroidKeyStore/);
+  assert.match(store, /AES\\/GCM\\/NoPadding/);
+  assert.match(store, /fun setPaused/);
+  assert.match(store, /fun delete/);
+  assert.match(store, /maxItems = 200/);
+  assert.match(activity, /rememberMatch/);
+  assert.match(activity, /personalMemoryStore\\.contextForPrompt/);
+  assert.match(ui, /PERSONAL MEMORY/);
+  assert.match(ui, /onPausePersonalMemory/);
+  assert.match(ui, /onDeletePersonalMemory/);
+});
+
+test('Code Studio captures encrypted development tasks without executing code on-device', () => {
+  const store = readFileSync(new URL('../app/src/main/java/ai/xyaa/assistant/CodeStudioTaskStore.kt', import.meta.url), 'utf8');
+  const ui = readFileSync(new URL('../app/src/main/java/ai/xyaa/assistant/XyaaPremiumUi.kt', import.meta.url), 'utf8');
+  assert.match(store, /AndroidKeyStore/);
+  assert.match(store, /AES\\/GCM\\/NoPadding/);
+  assert.match(store, /Queued · runner not connected/);
+  assert.match(ui, /private fun CodeStudioPage/);
+  assert.match(ui, /isolated cloud coding\\/build runner is not connected yet/);
+});
