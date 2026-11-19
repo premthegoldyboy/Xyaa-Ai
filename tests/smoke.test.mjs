@@ -178,3 +178,19 @@ test('cross-chat conversation history is encrypted and migrated from the legacy 
   assert.match(history, /One-time migration/);
   assert.match(history, /fun recentTurns/);
 });
+
+test('Code Studio AI worker is isolated, review-only, and validates generated patches', () => {
+  const worker = readFileSync(new URL('../scripts/code_studio_worker.py', import.meta.url), 'utf8');
+  const workflow = readFileSync(new URL('../.github/workflows/code-studio-ai-worker.yml', import.meta.url), 'utf8');
+  assert.match(worker, /GEMINI_API_KEY/);
+  assert.match(worker, /git", "apply", "--check/);
+  assert.match(worker, /NO_SAFE_PATCH/);
+  assert.match(worker, /\.github\/workflows\//);
+  assert.match(workflow, /workflow_dispatch:/);
+  assert.match(workflow, /permissions:\s+contents: read/);
+  assert.match(workflow, /persist-credentials: false/);
+  assert.match(workflow, /node --test/);
+  assert.match(workflow, /gradle assembleDebug/);
+  assert.match(workflow, /upload-artifact@v4/);
+  assert.doesNotMatch(workflow, /contents: write|git push|pull-requests: write/);
+});
