@@ -217,7 +217,8 @@ internal fun XyaaPremiumApp(
                             tab = "Chat"
                         } else submit(command)
                     }
-                    "Memory" -> MemoryPage(recentMemory, personalMemories, personalMemoryPaused, onPausePersonalMemory, onDeletePersonalMemory, onAddPersonalMemory, memoryQuery, { memoryQuery = it }) { confirmClear = true }\n                    "Code" -> CodeStudioPage(codeStudioTasks, onCreateCodeTask, onDeleteCodeTask)
+                    "Memory" -> MemoryPage(recentMemory, personalMemories, personalMemoryPaused, onPausePersonalMemory, onDeletePersonalMemory, onAddPersonalMemory, memoryQuery, { memoryQuery = it }) { confirmClear = true }
+                    "Code" -> CodeStudioPage(codeStudioTasks, onCreateCodeTask, onDeleteCodeTask)
                     "Settings" -> {
                         LaunchedEffect(Unit) {
                             apiKey = onLoadKey().orEmpty()
