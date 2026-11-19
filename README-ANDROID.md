@@ -34,3 +34,9 @@ The seven upgrades are being developed as a coordinated roadmap. Current branch 
 - **Real-time voice:** current speech-recognition intent + streamed text-to-speech is not full-duplex audio. A true live session needs a streaming audio transport and lifecycle handling.
 
 These items are intentionally marked by implementation status rather than presented as completed capabilities. Build and device validation are required before release.
+
+
+## XYAA Intelligence Core (early implementation)
+- **Personal Memory:** explicit user-directed facts are stored separately from recent chat turns, encrypted with Android Keystore AES-GCM, and can be paused or deleted from the Memory screen. Local-only; no cloud sync.
+- **Code Studio:** encrypted task inbox captures development requests. Remote code execution and cloud builds are not connected yet; the app clearly reports this rather than claiming tasks have run.
+- These tracks are developed independently and integrated through shared context and approval boundaries.
