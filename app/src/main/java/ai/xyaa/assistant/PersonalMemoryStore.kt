@@ -174,10 +174,10 @@ class PersonalMemoryStore(context: Context) {
         )
         if (credentialPhrases.any(lower::contains)) return true
         // Catch common credential assignments even when the user does not label them as secrets.
-        if (Regex("""\\b(?:token|secret|credential|password|passwd|api[_ -]?key)\\s*[:=]\\s*\\S+""", RegexOption.IGNORE_CASE).containsMatchIn(value)) return true
+        if (Regex("""\b(?:token|secret|credential|password|passwd|api[_ -]?key)\s*[:=]\s*\S+""", RegexOption.IGNORE_CASE).containsMatchIn(value)) return true
         // PEM/private-key material and long opaque key-like strings should never enter memory.
         if (value.contains("-----BEGIN") && value.contains("PRIVATE KEY")) return true
-        return Regex("""\\b[A-Za-z0-9_-]{32,}\\b""").containsMatchIn(value)
+        return Regex("""\b[A-Za-z0-9_-]{32,}\b""").containsMatchIn(value)
     }
 
     private fun classify(value: String): String {
