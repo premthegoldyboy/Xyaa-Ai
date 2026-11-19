@@ -77,7 +77,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             }
         }
     }
-    private val neuralVoiceStatus = mutableStateOf("Neural voice not downloaded (about 400 MB)")
+    private val neuralVoiceStatus = mutableStateOf("XYAA's Fiona-inspired offline voice is not downloaded (about 400 MB)")
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -222,21 +222,24 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     override fun onInit(status: Int) {
         if (status != TextToSpeech.SUCCESS) return
         val engine = tts ?: return
-        // Prefer a high-quality Indian-English voice when the device has one installed.
+        // Match the locally available voice to XYAA's bright, clear American-English target.
+        // Prefer en-US when installed; retain en-IN as a sensible regional fallback.
         val voices = engine.voices.orEmpty()
         val preferred = voices
-            .filter { it.locale.language == "en" }
+            .filter { it.locale.language == XyaaVoiceProfile.DEVICE_LANGUAGE }
             .sortedWith(
                 compareByDescending<android.speech.tts.Voice> {
-                    it.locale.country.equals("IN", ignoreCase = true)
+                    it.locale.country.equals(XyaaVoiceProfile.DEVICE_COUNTRY_PRIMARY, ignoreCase = true)
+                }.thenByDescending {
+                    it.locale.country.equals(XyaaVoiceProfile.DEVICE_COUNTRY_FALLBACK, ignoreCase = true)
                 }.thenByDescending { it.quality }
                     .thenBy { it.isNetworkConnectionRequired }
             )
             .firstOrNull()
         if (preferred != null) engine.voice = preferred
-        else engine.language = Locale("en", "IN")
-        engine.setSpeechRate(0.91f)
-        engine.setPitch(1.02f)
+        else engine.language = Locale(XyaaVoiceProfile.DEVICE_LANGUAGE, XyaaVoiceProfile.DEVICE_COUNTRY_PRIMARY)
+        engine.setSpeechRate(XyaaVoiceProfile.DEVICE_SPEECH_RATE)
+        engine.setPitch(XyaaVoiceProfile.DEVICE_PITCH)
         engine.setOnUtteranceProgressListener(deviceVoiceListener)
         deviceVoiceReady = true
     }
