@@ -129,6 +129,8 @@ internal fun XyaaPremiumApp(
     onDeleteCodeTask: (String) -> Unit,
     onEditCodeTask: (String, String) -> Unit,
     onShareCodeTask: (CodeStudioTaskStore.Task) -> Unit,
+    onPlanCodeTask: (CodeStudioTaskStore.Task) -> Unit,
+    onApproveCodeTask: (String, Boolean) -> Unit,
     liveVoiceActive: Boolean,
     liveVoiceStatus: String,
     liveTranscript: String,
@@ -222,7 +224,7 @@ internal fun XyaaPremiumApp(
                         } else submit(command)
                     }
                     "Memory" -> MemoryPage(recentMemory, personalMemories, personalMemoryPaused, onPausePersonalMemory, onDeletePersonalMemory, onAddPersonalMemory, onEditPersonalMemory, onExportPersonalMemory, memoryQuery, { memoryQuery = it }) { confirmClear = true }
-                    "Code" -> CodeStudioPage(codeStudioTasks, onCreateCodeTask, onDeleteCodeTask, onEditCodeTask, onShareCodeTask)
+                    "Code" -> CodeStudioPage(codeStudioTasks, onCreateCodeTask, onDeleteCodeTask, onEditCodeTask, onShareCodeTask, onPlanCodeTask, onApproveCodeTask)
                     "Settings" -> {
                         LaunchedEffect(Unit) {
                             apiKey = onLoadKey().orEmpty()
@@ -884,7 +886,9 @@ private fun CodeStudioPage(
     createTask: (String) -> Unit,
     deleteTask: (String) -> Unit,
     editTask: (String, String) -> Unit,
-    shareTask: (CodeStudioTaskStore.Task) -> Unit
+    shareTask: (CodeStudioTaskStore.Task) -> Unit,
+    planTask: (CodeStudioTaskStore.Task) -> Unit,
+    approveTask: (String, Boolean) -> Unit
 ) {
     var request by remember { mutableStateOf("") }
     var expandedId by remember { mutableStateOf<String?>(null) }
@@ -935,10 +939,22 @@ private fun CodeStudioPage(
                     Text(task.request,color=White,fontSize=12.sp,lineHeight=18.sp,maxLines=if(expanded) Int.MAX_VALUE else 3,
                         overflow=TextOverflow.Ellipsis)
                     if(expanded) {
-                        Text("Task saved locally and encrypted. It has not been sent to a remote worker or executed.",
+                        Text("Task saved locally and encrypted. Planning does not execute code or change a repository.",
                             color=Muted,fontSize=10.sp,modifier=Modifier.padding(top=8.dp))
+                        if(task.plan.isNotBlank()) {
+                            Text("IMPLEMENTATION PLAN",color=Cyan,fontSize=9.sp,fontWeight=FontWeight.Bold,
+                                modifier=Modifier.padding(top=12.dp,bottom=5.dp))
+                            Text(task.plan,color=White,fontSize=11.sp,lineHeight=16.sp)
+                            Row(verticalAlignment=Alignment.CenterVertically) {
+                                Text(if(task.approved) "Plan approved" else "Approval required",color=Muted,fontSize=10.sp,modifier=Modifier.weight(1f))
+                                Switch(checked=task.approved,onCheckedChange={approveTask(task.id,it)})
+                            }
+                            if(task.approved) Text("Approval recorded. Repository execution remains disabled until a secure isolated runner is connected.",
+                                color=Color(0xFFFFD18A),fontSize=10.sp)
+                        }
                         Row(horizontalArrangement=Arrangement.spacedBy(8.dp),modifier=Modifier.padding(top=8.dp)) {
                             TextButton(onClick={editingTask=task;editRequest=task.request}) { Text("Edit task",color=Cyan) }
+                            TextButton(onClick={planTask(task)}) { Text(if(task.plan.isBlank()) "Generate plan" else "Regenerate plan",color=Cyan) }
                             TextButton(onClick={shareTask(task)}) { Text("Export brief",color=Cyan) }
                         }
                     }
