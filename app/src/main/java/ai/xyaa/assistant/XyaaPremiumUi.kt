@@ -122,6 +122,8 @@ internal fun XyaaPremiumApp(
     onPausePersonalMemory: (Boolean) -> Unit,
     onDeletePersonalMemory: (String) -> Unit,
     onAddPersonalMemory: (String) -> Unit,
+    onEditPersonalMemory: (String, String) -> Unit,
+    onExportPersonalMemory: () -> Unit,
     codeStudioTasks: List<CodeStudioTaskStore.Task>,
     onCreateCodeTask: (String) -> Unit,
     onDeleteCodeTask: (String) -> Unit,
@@ -217,7 +219,7 @@ internal fun XyaaPremiumApp(
                             tab = "Chat"
                         } else submit(command)
                     }
-                    "Memory" -> MemoryPage(recentMemory, personalMemories, personalMemoryPaused, onPausePersonalMemory, onDeletePersonalMemory, onAddPersonalMemory, memoryQuery, { memoryQuery = it }) { confirmClear = true }
+                    "Memory" -> MemoryPage(recentMemory, personalMemories, personalMemoryPaused, onPausePersonalMemory, onDeletePersonalMemory, onAddPersonalMemory, onEditPersonalMemory, onExportPersonalMemory, memoryQuery, { memoryQuery = it }) { confirmClear = true }
                     "Code" -> CodeStudioPage(codeStudioTasks, onCreateCodeTask, onDeleteCodeTask)
                     "Settings" -> {
                         LaunchedEffect(Unit) {
@@ -943,11 +945,15 @@ private fun MemoryPage(
     setPaused: (Boolean) -> Unit,
     deletePersonal: (String) -> Unit,
     addPersonal: (String) -> Unit,
+    editPersonal: (String, String) -> Unit,
+    exportPersonal: () -> Unit,
     query: String,
     onQuery: (String) -> Unit,
     clear: () -> Unit
 ) {
     var newFact by remember { mutableStateOf("") }
+    var editingItem by remember { mutableStateOf<PersonalMemoryStore.Item?>(null) }
+    var editContent by remember { mutableStateOf("") }
     val filtered = memories.filter { it.contains(query, ignoreCase = true) }
     val saved = personalMemories.filter { it.content.contains(query, ignoreCase = true) || it.category.contains(query, ignoreCase = true) }
     Column(Modifier.fillMaxSize().padding(horizontal = 18.dp)) {
@@ -970,6 +976,9 @@ private fun MemoryPage(
                     enabled=newFact.isNotBlank() && !paused,modifier=Modifier.fillMaxWidth()) {
                     Icon(Icons.Default.Add,null); Spacer(Modifier.width(6.dp)); Text("Save personal memory")
                 }
+                OutlinedButton(onClick=exportPersonal, enabled=personalMemories.isNotEmpty(), modifier=Modifier.fillMaxWidth()) {
+                    Icon(Icons.Default.IosShare,null); Spacer(Modifier.width(6.dp)); Text("Export personal memory")
+                }
                 if(saved.isEmpty()) Text("No personal facts saved yet. XYAA only saves facts when you ask it to remember them.",color=Muted,fontSize=10.sp)
                 else {
                     Text("${saved.size} SAVED FACTS",color=Muted,fontSize=9.sp,letterSpacing=1.2.sp)
@@ -978,6 +987,9 @@ private fun MemoryPage(
                             Column(Modifier.weight(1f)) {
                                 Text(item.category.uppercase(),color=Cyan,fontSize=8.sp,fontWeight=FontWeight.Bold)
                                 Text(item.content,color=White,fontSize=11.sp,lineHeight=15.sp)
+                            }
+                            IconButton(onClick={editingItem=item;editContent=item.content}) {
+                                Icon(Icons.Default.Edit,"Edit saved memory",tint=Cyan)
                             }
                             IconButton(onClick={deletePersonal(item.id)}) {
                                 Icon(Icons.Default.DeleteOutline,"Delete saved memory",tint=Color(0xFFFF8C9B))
@@ -1020,6 +1032,16 @@ private fun MemoryPage(
             Icon(Icons.Default.DeleteOutline,null); Spacer(Modifier.width(8.dp)); Text("Clear conversation memory")
         }
         Spacer(Modifier.height(10.dp))
+    }
+    editingItem?.let { item ->
+        AlertDialog(
+            onDismissRequest={editingItem=null}, containerColor=Panel2,
+            title={Text("Edit saved memory",color=White)},
+            text={OutlinedTextField(value=editContent,onValueChange={editContent=it.take(500)},
+                modifier=Modifier.fillMaxWidth(),minLines=2,maxLines=4,colors=fieldColors())},
+            confirmButton={TextButton(onClick={editPersonal(item.id,editContent);editingItem=null}) { Text("Save changes",color=Cyan) }},
+            dismissButton={TextButton(onClick={editingItem=null}) { Text("Cancel",color=Muted) }}
+        )
     }
 }
 
