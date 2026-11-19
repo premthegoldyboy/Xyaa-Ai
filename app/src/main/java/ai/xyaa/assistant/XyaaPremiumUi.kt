@@ -924,9 +924,9 @@ private fun SettingsPage(
         }
         Text("Keys are stored using Android Keystore-backed encryption.",color=Muted,fontSize=10.sp)
         Spacer(Modifier.height(18.dp)); Label("VOICE")
-        InfoCard("XYAA neural voice",voiceStatus,"VOICE")
+        InfoCard("XYAA voice · Fiona-inspired",voiceStatus,"VOICE")
         OutlinedButton(onClick=downloadVoice,modifier=Modifier.fillMaxWidth()) {
-            Icon(Icons.Default.Download,null); Spacer(Modifier.width(8.dp)); Text("Download / initialize neural voice")
+            Icon(Icons.Default.Download,null); Spacer(Modifier.width(8.dp)); Text("Download / initialize XYAA voice")
         }
         InfoCard("Hey XYAA wake word",if(wake) "On-device wake-word service is enabled." else "On-device wake-word service is disabled.",if(wake) "ON" else "OFF",{
             TextButton(onClick={if(wake)stopWake() else startWake()}) { Text(if(wake)"Turn off" else "Turn on",color=Cyan) }
