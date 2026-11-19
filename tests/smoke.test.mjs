@@ -145,7 +145,7 @@ test('Code Studio captures encrypted development tasks without executing code on
   const store = readFileSync(new URL('../app/src/main/java/ai/xyaa/assistant/CodeStudioTaskStore.kt', import.meta.url), 'utf8');
   const ui = readFileSync(new URL('../app/src/main/java/ai/xyaa/assistant/XyaaPremiumUi.kt', import.meta.url), 'utf8');
   assert.match(store, /AndroidKeyStore/);
-  assert.match(store, /AES\\/GCM\\/NoPadding/);
+  assert.ok(store.includes("AES/GCM/NoPadding"));
   assert.match(store, /Queued · runner not connected/);
   assert.match(ui, /private fun CodeStudioPage/);
   assert.ok(ui.includes("isolated cloud coding/build runner is not connected yet"));
