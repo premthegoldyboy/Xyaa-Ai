@@ -151,3 +151,13 @@ test('Code Studio captures encrypted development tasks without executing code on
   assert.match(ui, /private fun CodeStudioPage/);
   assert.ok(ui.includes("isolated cloud coding/build runner is not connected yet"));
 });
+
+
+test('cross-chat conversation history is encrypted and migrated from the legacy local format', () => {
+  const history = readFileSync(new URL('../app/src/main/java/ai/xyaa/assistant/ConversationMemory.kt', import.meta.url), 'utf8');
+  assert.match(history, /AndroidKeyStore/);
+  assert.ok(history.includes("AES/GCM/NoPadding"));
+  assert.match(history, /maxTurns = 120/);
+  assert.match(history, /One-time migration/);
+  assert.match(history, /fun recentTurns/);
+});
