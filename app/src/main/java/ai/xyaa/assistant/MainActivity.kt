@@ -468,7 +468,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                     codeStudioTasks.value = codeStudioTaskStore.all()
                     android.widget.Toast.makeText(this, plan, android.widget.Toast.LENGTH_LONG).show()
                 } else {
-                    codeStudioTaskStore.savePlan(task.id, plan)
+                    codeStudioTaskStore.savePlan(task.id, plan, task.request)
                     codeStudioTasks.value = codeStudioTaskStore.all()
                 }
             }
