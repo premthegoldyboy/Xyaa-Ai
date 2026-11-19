@@ -446,6 +446,9 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     }
 
     private fun planCodeTask(task: CodeStudioTaskStore.Task) {
+        if (task.status == "Planning…") return
+        codeStudioTaskStore.setPlanning(task.id)
+        codeStudioTasks.value = codeStudioTaskStore.all()
         Thread {
             val key = SecureKeyStore(this).read()
             val providers = ProviderKeyStore(this)
@@ -461,6 +464,8 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             }.getOrElse { "Planning failed: ${it.message.orEmpty().take(180)}" }
             runOnUiThread {
                 if (plan.startsWith("Planning failed:")) {
+                    codeStudioTaskStore.setPlanningFailed(task.id)
+                    codeStudioTasks.value = codeStudioTaskStore.all()
                     android.widget.Toast.makeText(this, plan, android.widget.Toast.LENGTH_LONG).show()
                 } else {
                     codeStudioTaskStore.savePlan(task.id, plan)
