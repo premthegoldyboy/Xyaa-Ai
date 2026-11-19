@@ -1,0 +1,101 @@
+name: Code Studio isolated validation runner
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Branch or commit to validate (never writes to the repository)
+        required: true
+        type: string
+        default: xyaa/molten-speech-ime-container
+      task_id:
+        description: Optional Code Studio task ID for traceability
+        required: false
+        type: string
+      task_summary:
+        description: Short approved task summary (metadata only; this workflow does not generate or apply code)
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: xyaa-code-studio-${{ github.workflow }}-${{ inputs.source_ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate-and-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Validate requested ref
+        shell: bash
+        env:
+          SOURCE_REF: ${{ inputs.source_ref }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$SOURCE_REF" =~ ^[A-Za-z0-9._/-]{1,200}$ ]] || [[ "$SOURCE_REF" == *".."* ]] || [[ "$SOURCE_REF" == -* ]]; then
+            echo "::error::Invalid source ref"
+            exit 1
+          fi
+
+      - name: Checkout selected source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref }}
+          persist-credentials: false
+
+      - name: Record task metadata
+        shell: bash
+        env:
+          TASK_ID: ${{ inputs.task_id }}
+          TASK_SUMMARY: ${{ inputs.task_summary }}
+          SOURCE_REF: ${{ inputs.source_ref }}
+        run: |
+          {
+            echo "# XYAA Code Studio validation"
+            echo
+            echo "- Source ref: `$SOURCE_REF`"
+            echo "- Task ID: ${TASK_ID:-not supplied}"
+            echo "- Task summary: ${TASK_SUMMARY:-not supplied}"
+            echo
+            echo "This job validates and builds the selected source. It does not generate, modify, commit, or push code."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Run repository smoke tests
+        run: node --test
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: "platform-tools platforms;android-35 build-tools;35.0.0"
+
+      - name: Assemble debug APK
+        env:
+          ANDROID_HOME: /usr/local/lib/android/sdk
+          ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+        run: gradle assembleDebug
+
+      - name: Upload APK and test reports
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xyaa-code-studio-${{ github.run_number }}-${{ github.run_attempt }}
+          path: |
+            app/build/outputs/apk/debug/*.apk
+            **/build/reports/tests/**
+          if-no-files-found: error
+          retention-days: 7
