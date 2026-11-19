@@ -122,6 +122,9 @@ internal fun XyaaPremiumApp(
     onPausePersonalMemory: (Boolean) -> Unit,
     onDeletePersonalMemory: (String) -> Unit,
     onAddPersonalMemory: (String) -> Unit,
+    codeStudioTasks: List<CodeStudioTaskStore.Task>,
+    onCreateCodeTask: (String) -> Unit,
+    onDeleteCodeTask: (String) -> Unit,
     liveVoiceActive: Boolean,
     liveVoiceStatus: String,
     liveTranscript: String,
@@ -182,7 +185,7 @@ internal fun XyaaPremiumApp(
                 if (!imeOpen) NavigationBar(containerColor = Color(0xFF100D1C)) {
                     listOf("Orb" to Icons.Default.BubbleChart, "Chat" to Icons.Default.Forum,
                         "Research" to Icons.Default.Search, "Skills" to Icons.Default.GridView,
-                        "Memory" to Icons.Default.Hub, "Settings" to Icons.Default.Settings).forEach { (name, icon) ->
+                        "Code" to Icons.Default.Code, "Memory" to Icons.Default.Hub, "Settings" to Icons.Default.Settings).forEach { (name, icon) ->
                         NavigationBarItem(
                             selected = tab == name, onClick = { tab = name },
                             icon = { Icon(icon, name) }, label = { Text(name, fontSize = 9.sp) },
@@ -214,7 +217,7 @@ internal fun XyaaPremiumApp(
                             tab = "Chat"
                         } else submit(command)
                     }
-                    "Memory" -> MemoryPage(recentMemory, personalMemories, personalMemoryPaused, onPausePersonalMemory, onDeletePersonalMemory, onAddPersonalMemory, memoryQuery, { memoryQuery = it }) { confirmClear = true }
+                    "Memory" -> MemoryPage(recentMemory, personalMemories, personalMemoryPaused, onPausePersonalMemory, onDeletePersonalMemory, onAddPersonalMemory, memoryQuery, { memoryQuery = it }) { confirmClear = true }\n                    "Code" -> CodeStudioPage(codeStudioTasks, onCreateCodeTask, onDeleteCodeTask)
                     "Settings" -> {
                         LaunchedEffect(Unit) {
                             apiKey = onLoadKey().orEmpty()
@@ -868,6 +871,67 @@ private fun SkillSection(title: String, skills: List<Triple<String, androidx.com
         }
     }
     Spacer(Modifier.height(14.dp))
+}
+
+@Composable
+private fun CodeStudioPage(
+    tasks: List<CodeStudioTaskStore.Task>,
+    createTask: (String) -> Unit,
+    deleteTask: (String) -> Unit
+) {
+    var request by remember { mutableStateOf("") }
+    var expandedId by remember { mutableStateOf<String?>(null) }
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal=18.dp)) {
+        Heading("Code Studio", "Turn development ideas into tracked coding tasks")
+        Surface(color=Panel,shape=RoundedCornerShape(17.dp),modifier=Modifier.fillMaxWidth().padding(bottom=12.dp)) {
+            Column(Modifier.padding(14.dp)) {
+                Row(verticalAlignment=Alignment.CenterVertically) {
+                    Icon(Icons.Default.Terminal,null,tint=Cyan)
+                    Spacer(Modifier.width(8.dp))
+                    Text("NEW DEVELOPMENT TASK",color=Cyan,fontSize=9.sp,fontWeight=FontWeight.Bold,letterSpacing=1.2.sp)
+                }
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value=request,onValueChange={request=it.take(4000)},modifier=Modifier.fillMaxWidth(),
+                    placeholder={Text("Example: Add a favourites screen and tests…")},
+                    minLines=3,maxLines=6,shape=RoundedCornerShape(13.dp),colors=fieldColors()
+                )
+                Spacer(Modifier.height(8.dp))
+                Button(onClick={val value=request.trim(); if(value.isNotEmpty()){createTask(value);request=""}},
+                    enabled=request.isNotBlank(),modifier=Modifier.fillMaxWidth()) {
+                    Icon(Icons.Default.Add,null); Spacer(Modifier.width(7.dp)); Text("Add to Code Studio")
+                }
+            }
+        }
+        InfoCard("Execution environment",
+            "Task capture is available. The isolated cloud coding/build runner is not connected yet; XYAA will not execute project code on this phone.",
+            "SETUP REQUIRED")
+        Label("TASK INBOX")
+        if(tasks.isEmpty()) {
+            Box(Modifier.fillMaxWidth().height(130.dp),contentAlignment=Alignment.Center) {
+                Text("No development tasks yet. Add a coding command above.",color=Muted,fontSize=12.sp)
+            }
+        } else tasks.forEach { task ->
+            val expanded = expandedId == task.id
+            Surface(color=Panel,shape=RoundedCornerShape(15.dp),modifier=Modifier.fillMaxWidth().padding(bottom=8.dp)) {
+                Column(Modifier.clickable { expandedId=if(expanded)null else task.id }.padding(13.dp)) {
+                    Row(verticalAlignment=Alignment.CenterVertically) {
+                        Icon(Icons.Default.Code,null,tint=Cyan,modifier=Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(task.status,color=Muted,fontSize=9.sp,modifier=Modifier.weight(1f))
+                        IconButton(onClick={deleteTask(task.id)}) {
+                            Icon(Icons.Default.DeleteOutline,"Delete task",tint=Color(0xFFFF8C9B))
+                        }
+                    }
+                    Text(task.request,color=White,fontSize=12.sp,lineHeight=18.sp,maxLines=if(expanded) Int.MAX_VALUE else 3,
+                        overflow=TextOverflow.Ellipsis)
+                    if(expanded) Text("Task saved locally and encrypted. It has not been sent to a remote worker or executed.",
+                        color=Muted,fontSize=10.sp,modifier=Modifier.padding(top=8.dp))
+                }
+            }
+        }
+        Spacer(Modifier.height(16.dp))
+    }
 }
 
 @Composable
