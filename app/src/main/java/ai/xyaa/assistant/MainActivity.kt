@@ -129,6 +129,8 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 codeStudioTasks = codeStudioTasks.value,
                 onCreateCodeTask = { request -> codeStudioTaskStore.create(request)?.let { codeStudioTasks.value = codeStudioTaskStore.all() } },
                 onDeleteCodeTask = { id -> codeStudioTaskStore.delete(id); codeStudioTasks.value = codeStudioTaskStore.all() },
+                onEditCodeTask = { id, request -> codeStudioTaskStore.update(id, request)?.let { codeStudioTasks.value = codeStudioTaskStore.all() } },
+                onShareCodeTask = ::shareCodeTask,
                 liveVoiceActive = liveVoiceActive.value,
                 liveVoiceStatus = liveVoiceStatus.value,
                 liveTranscript = liveTranscript.value,
@@ -439,6 +441,27 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 if (interrupted) s.finish()
             }
         }
+    }
+
+    private fun shareCodeTask(task: CodeStudioTaskStore.Task) {
+        val brief = buildString {
+            appendLine("# XYAA Code Studio task")
+            appendLine("Task ID: ${task.id}")
+            appendLine("Status: ${task.status}")
+            appendLine("Created: ${java.text.DateFormat.getDateTimeInstance().format(java.util.Date(task.createdAt))}")
+            appendLine()
+            appendLine("## Request")
+            appendLine(task.request)
+            appendLine()
+            appendLine("## Safety / execution note")
+            appendLine("This is a task brief only. No repository changes or code execution have occurred.")
+        }
+        val sendIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/markdown"
+            putExtra(Intent.EXTRA_SUBJECT, "XYAA Code Studio task")
+            putExtra(Intent.EXTRA_TEXT, brief)
+        }
+        runCatching { startActivity(Intent.createChooser(sendIntent, "Export Code Studio task")) }
     }
 
     private fun sharePersonalMemory() {
