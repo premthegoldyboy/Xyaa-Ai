@@ -131,6 +131,8 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 onDeleteCodeTask = { id -> codeStudioTaskStore.delete(id); codeStudioTasks.value = codeStudioTaskStore.all() },
                 onEditCodeTask = { id, request -> codeStudioTaskStore.update(id, request)?.let { codeStudioTasks.value = codeStudioTaskStore.all() } },
                 onShareCodeTask = ::shareCodeTask,
+                onPlanCodeTask = ::planCodeTask,
+                onApproveCodeTask = { id, approved -> codeStudioTaskStore.setApproved(id, approved)?.let { codeStudioTasks.value = codeStudioTaskStore.all() } },
                 liveVoiceActive = liveVoiceActive.value,
                 liveVoiceStatus = liveVoiceStatus.value,
                 liveTranscript = liveTranscript.value,
@@ -443,6 +445,31 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         }
     }
 
+    private fun planCodeTask(task: CodeStudioTaskStore.Task) {
+        Thread {
+            val key = SecureKeyStore(this).read()
+            val providers = ProviderKeyStore(this)
+            val groq = providers.read("groq")
+            val deepSeek = providers.read("deepseek")
+            val plan = runCatching {
+                val instruction = """You are XYAA Code Studio's software planning agent. Create a practical, reviewable implementation plan for the user's coding request. Include: (1) assumptions and questions, (2) files/components to inspect or change, (3) ordered implementation steps, (4) tests and build verification, (5) risks and rollback notes. Do not claim you inspected a repository: no repository snapshot is attached. Mark unknown paths as items to inspect. Do not write or execute code. Request: ${task.request}"""
+                when {
+                    !key.isNullOrBlank() -> askGemini(key, instruction, {}, {})
+                    !groq.isNullOrBlank() || !deepSeek.isNullOrBlank() -> ProviderFallbackClient(groq, deepSeek).complete(instruction) {}
+                    else -> throw IllegalStateException("Add a Gemini, Groq, or DeepSeek key in Settings to generate a plan.")
+                }
+            }.getOrElse { "Planning failed: ${it.message.orEmpty().take(180)}" }
+            runOnUiThread {
+                if (plan.startsWith("Planning failed:")) {
+                    android.widget.Toast.makeText(this, plan, android.widget.Toast.LENGTH_LONG).show()
+                } else {
+                    codeStudioTaskStore.savePlan(task.id, plan)
+                    codeStudioTasks.value = codeStudioTaskStore.all()
+                }
+            }
+        }.start()
+    }
+
     private fun shareCodeTask(task: CodeStudioTaskStore.Task) {
         val brief = buildString {
             appendLine("# XYAA Code Studio task")
@@ -453,8 +480,13 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             appendLine("## Request")
             appendLine(task.request)
             appendLine()
+            if (task.plan.isNotBlank()) {
+                appendLine("## Implementation plan")
+                appendLine(task.plan)
+                appendLine("Approved: ${task.approved}")
+            }
             appendLine("## Safety / execution note")
-            appendLine("This is a task brief only. No repository changes or code execution have occurred.")
+            appendLine("This is a task brief only. No repository snapshot was inspected and no code was executed or changed.")
         }
         val sendIntent = Intent(Intent.ACTION_SEND).apply {
             type = "text/markdown"
