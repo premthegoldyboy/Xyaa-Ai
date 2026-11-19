@@ -56,6 +56,23 @@ class PersonalMemoryStore(context: Context) {
         item
     }
 
+    /** Updates an existing user-approved fact without creating a second copy. */
+    fun update(id: String, content: String): Item? = synchronized(lock) {
+        val cleaned = content.trim().take(maxContentChars)
+        if (cleaned.isBlank() || containsCredentialLikeData(cleaned)) return@synchronized null
+        val items = readUnsafe().toMutableList()
+        val index = items.indexOfFirst { it.id == id }
+        if (index < 0) return@synchronized null
+        val updated = items[index].copy(category = classify(cleaned), content = cleaned, updatedAt = System.currentTimeMillis())
+        val duplicate = items.indexOfFirst { it.id != id && it.content.equals(cleaned, ignoreCase = true) }
+        if (duplicate >= 0) {
+            items[duplicate] = items[duplicate].copy(category = updated.category, updatedAt = updated.updatedAt)
+            items.removeAt(index)
+        } else items[index] = updated
+        writeUnsafe(items)
+        updated
+    }
+
     fun all(): List<Item> = synchronized(lock) { readUnsafe().sortedByDescending { it.updatedAt } }
 
     fun deleteMatching(query: String): Int = synchronized(lock) {
