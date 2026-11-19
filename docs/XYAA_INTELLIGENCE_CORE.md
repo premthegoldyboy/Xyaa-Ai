@@ -12,11 +12,11 @@ These are parallel workstreams, not a serial roadmap. Shared interfaces and inte
 ## Current baseline (verified from this branch)
 
 - Native Android app: Kotlin + Jetpack Compose; package `ai.xyaa.assistant`.
-- Existing `ConversationMemory` stores up to 24 recent user/assistant turns in app-private SharedPreferences. It is short-term transcript context, not durable personal memory.
+- Existing `ConversationMemory` stores up to 120 recent user/assistant turns encrypted with Android Keystore AES-GCM. It is cross-chat transcript recall, not durable personal memory.
 - Existing `ConversationMemoryAgent` retrieves matching recent turns; it cannot recall conversations outside that bounded store.
 - Gemini provider key storage already uses Android Keystore-backed encryption.
 - Existing GitHub Actions workflow runs `gradle assembleDebug` and uploads an APK artifact.
-- No in-app Code Studio, isolated code execution service, durable personal-memory store, or user-facing memory controls are implemented yet.
+- Personal Memory and the local Code Studio task inbox now have first functional Android implementations. The isolated remote code execution/build service is not connected yet.
 
 ## Parallel workstream A — Personal Memory
 
@@ -113,13 +113,13 @@ Shared integration happens continuously through versioned interfaces and contrac
 ## Implementation status — 2026-11-19
 
 ### Personal Memory — first functional increment
-- Implemented `PersonalMemoryStore` as a separate store from short-term `ConversationMemory`.
+- Implemented `PersonalMemoryStore` as a separate store from encrypted cross-chat `ConversationMemory`.
 - Facts are written only from an explicit “remember …” command or the Memory screen's add control.
 - Payload is encrypted with AES-GCM using a non-exportable Android Keystore key.
 - Supports categories, bounded storage, pause/resume, deletion, listing, and relevance-filtered prompt context.
 - Credentials-like phrases are rejected. Memory remains local; no cloud sync is enabled.
 - The Memory screen exposes saved facts separately from recent transcript turns.
-- Remaining work: edit flow, richer recall ranking, export, migration and device-level privacy testing.
+- Remaining work: edit flow, richer recall ranking, export, and device-level privacy testing.
 
 ### Code Studio — first functional increment
 - Added an encrypted local task inbox and a Code Studio screen for capturing, viewing, and deleting development requests.
