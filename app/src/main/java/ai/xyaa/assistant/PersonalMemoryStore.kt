@@ -58,6 +58,17 @@ class PersonalMemoryStore(context: Context) {
 
     fun all(): List<Item> = synchronized(lock) { readUnsafe().sortedByDescending { it.updatedAt } }
 
+    fun deleteMatching(query: String): Int = synchronized(lock) {
+        val needle = query.trim()
+        if (needle.isBlank()) return@synchronized 0
+        val items = readUnsafe().toMutableList()
+        val before = items.size
+        items.removeAll { it.content.contains(needle, ignoreCase = true) }
+        val removed = before - items.size
+        if (removed > 0) writeUnsafe(items)
+        removed
+    }
+
     fun delete(id: String): Boolean = synchronized(lock) {
         val items = readUnsafe().toMutableList()
         val changed = items.removeAll { it.id == id }
