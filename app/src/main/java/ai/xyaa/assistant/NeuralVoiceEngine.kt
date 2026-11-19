@@ -44,7 +44,7 @@ class NeuralVoiceEngine(private val context: Context, private val onStatus: (Str
     fun initializeIfInstalled() {
         executor.execute {
             if (!closed && hasModelFiles()) runCatching { createEngine() }
-                .onSuccess { engine = it; onStatus("${XyaaVoiceProfile.READY_STATUS}") }
+                .onSuccess { engine = it; onStatus(XyaaVoiceProfile.READY_STATUS) }
                 .onFailure { onStatus("Voice model found but could not load: ${it.message ?: "unknown error"}") }
         }
     }
@@ -92,7 +92,7 @@ class NeuralVoiceEngine(private val context: Context, private val onStatus: (Str
                 archive.delete()
                 check(hasModelFiles()) { "Downloaded archive is missing required Kokoro files" }
                 engine = createEngine()
-                onStatus("${XyaaVoiceProfile.READY_STATUS}")
+                onStatus(XyaaVoiceProfile.READY_STATUS)
             } catch (error: Throwable) {
                 onStatus("Neural voice setup failed: ${error.message ?: "unknown error"}. Existing system voice remains available.")
             } finally { downloading.set(false) }
