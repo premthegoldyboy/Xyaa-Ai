@@ -55,6 +55,8 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     private lateinit var neuralVoice: NeuralVoiceEngine
     private lateinit var conversationMemory: ConversationMemory
     private lateinit var personalMemoryStore: PersonalMemoryStore
+    private lateinit var codeStudioTaskStore: CodeStudioTaskStore
+    private val codeStudioTasks = mutableStateOf<List<CodeStudioTaskStore.Task>>(emptyList())
     private val personalMemories = mutableStateOf<List<PersonalMemoryStore.Item>>(emptyList())
     private val personalMemoryPaused = mutableStateOf(false)
     private val recentMemory = mutableStateOf<List<String>>(emptyList())
@@ -88,6 +90,8 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         managementAgent = ManagementAgent(this)
         conversationMemory = ConversationMemory(this)
         personalMemoryStore = PersonalMemoryStore(this)
+        codeStudioTaskStore = CodeStudioTaskStore(this)
+        codeStudioTasks.value = codeStudioTaskStore.all()
         personalMemories.value = personalMemoryStore.all()
         personalMemoryPaused.value = personalMemoryStore.isPaused()
         recentMemory.value = conversationMemory.recentTurns().map { "${if (it.role == "user") "You" else "XYAA"}: ${it.text}" }
@@ -120,6 +124,9 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 onPausePersonalMemory = { paused -> personalMemoryStore.setPaused(paused); personalMemoryPaused.value = paused },
                 onDeletePersonalMemory = { id -> personalMemoryStore.delete(id); personalMemories.value = personalMemoryStore.all() },
                 onAddPersonalMemory = { value -> personalMemoryStore.add(value)?.let { personalMemories.value = personalMemoryStore.all() } },
+                codeStudioTasks = codeStudioTasks.value,
+                onCreateCodeTask = { request -> codeStudioTaskStore.create(request)?.let { codeStudioTasks.value = codeStudioTaskStore.all() } },
+                onDeleteCodeTask = { id -> codeStudioTaskStore.delete(id); codeStudioTasks.value = codeStudioTaskStore.all() },
                 liveVoiceActive = liveVoiceActive.value,
                 liveVoiceStatus = liveVoiceStatus.value,
                 liveTranscript = liveTranscript.value,
