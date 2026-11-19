@@ -11,7 +11,8 @@ internal object XyaaVoiceProfile {
     const val DISPLAY_NAME = "Fiona-inspired"
     const val KOKORO_VOICE_ID = 10 // Kokoro multi-lang v1.0: af_sky
     const val KOKORO_SPEED = 1.02f
-    const val MAX_CHUNK_CHARS = 160
+    const val MAX_CHUNK_CHARS = 320
+    const val MAX_QUEUED_CHUNKS = 3
 
     const val DEVICE_LANGUAGE = "en"
     const val DEVICE_COUNTRY_PRIMARY = "US"
