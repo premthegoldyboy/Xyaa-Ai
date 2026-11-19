@@ -43,6 +43,19 @@ class CodeStudioTaskStore(context: Context) {
         task
     }
 
+    /** Edit a queued task without changing its identity or pretending it has executed. */
+    fun update(id: String, request: String): Task? = synchronized(lock) {
+        val cleaned = request.trim().take(4000)
+        if (cleaned.isBlank()) return@synchronized null
+        val tasks = readUnsafe().toMutableList()
+        val index = tasks.indexOfFirst { it.id == id }
+        if (index < 0) return@synchronized null
+        val updated = tasks[index].copy(request = cleaned, updatedAt = System.currentTimeMillis())
+        tasks[index] = updated
+        writeUnsafe(tasks)
+        updated
+    }
+
     fun all(): List<Task> = synchronized(lock) { readUnsafe().sortedByDescending { it.createdAt } }
 
     fun delete(id: String) = synchronized(lock) {
