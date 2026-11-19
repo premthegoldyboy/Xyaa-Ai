@@ -148,8 +148,14 @@ test('Code Studio captures encrypted development tasks without executing code on
   assert.match(store, /AndroidKeyStore/);
   assert.ok(store.includes("AES/GCM/NoPadding"));
   assert.match(store, /Queued · runner not connected/);
+  assert.match(store, /fun savePlan/);
+  assert.match(store, /fun setApproved/);
+  assert.match(store, /approved: Boolean = false/);
   assert.match(ui, /private fun CodeStudioPage/);
   assert.ok(ui.includes("isolated cloud coding/build runner is not connected yet"));
+  assert.match(ui, /Generate plan/);
+  assert.match(ui, /Approval required/);
+  assert.match(ui, /Repository execution remains disabled/);
 });
 
 
