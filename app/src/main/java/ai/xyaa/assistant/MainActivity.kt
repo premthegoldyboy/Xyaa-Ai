@@ -124,6 +124,8 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 onPausePersonalMemory = { paused -> personalMemoryStore.setPaused(paused); personalMemoryPaused.value = paused },
                 onDeletePersonalMemory = { id -> personalMemoryStore.delete(id); personalMemories.value = personalMemoryStore.all() },
                 onAddPersonalMemory = { value -> personalMemoryStore.add(value)?.let { personalMemories.value = personalMemoryStore.all() } },
+                onEditPersonalMemory = { id, value -> personalMemoryStore.update(id, value)?.let { personalMemories.value = personalMemoryStore.all() } },
+                onExportPersonalMemory = ::sharePersonalMemory,
                 codeStudioTasks = codeStudioTasks.value,
                 onCreateCodeTask = { request -> codeStudioTaskStore.create(request)?.let { codeStudioTasks.value = codeStudioTaskStore.all() } },
                 onDeleteCodeTask = { id -> codeStudioTaskStore.delete(id); codeStudioTasks.value = codeStudioTaskStore.all() },
@@ -437,6 +439,26 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 if (interrupted) s.finish()
             }
         }
+    }
+
+    private fun sharePersonalMemory() {
+        val facts = personalMemoryStore.all()
+        if (facts.isEmpty()) return
+        val export = buildString {
+            appendLine("XYAA Personal Memory Export")
+            appendLine("Exported: ${java.text.DateFormat.getDateTimeInstance().format(java.util.Date())}")
+            appendLine("This file contains only user-approved personal memory items.")
+            appendLine()
+            facts.sortedBy { it.category }.forEach { item ->
+                appendLine("[${item.category}] ${item.content}")
+            }
+        }
+        val sendIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_SUBJECT, "XYAA Personal Memory Export")
+            putExtra(Intent.EXTRA_TEXT, export)
+        }
+        runCatching { startActivity(Intent.createChooser(sendIntent, "Export personal memory")) }
     }
 
     private fun shareResearchReport(report: String) {
