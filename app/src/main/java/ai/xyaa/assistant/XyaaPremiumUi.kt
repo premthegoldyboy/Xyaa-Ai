@@ -117,6 +117,11 @@ internal fun XyaaPremiumApp(
     onClearMemory: () -> Unit,
     onShareReport: (String) -> Unit,
     recentMemory: List<String>,
+    personalMemories: List<PersonalMemoryStore.Item>,
+    personalMemoryPaused: Boolean,
+    onPausePersonalMemory: (Boolean) -> Unit,
+    onDeletePersonalMemory: (String) -> Unit,
+    onAddPersonalMemory: (String) -> Unit,
     liveVoiceActive: Boolean,
     liveVoiceStatus: String,
     liveTranscript: String,
@@ -209,7 +214,7 @@ internal fun XyaaPremiumApp(
                             tab = "Chat"
                         } else submit(command)
                     }
-                    "Memory" -> MemoryPage(recentMemory, memoryQuery, { memoryQuery = it }) { confirmClear = true }
+                    "Memory" -> MemoryPage(recentMemory, personalMemories, personalMemoryPaused, onPausePersonalMemory, onDeletePersonalMemory, onAddPersonalMemory, memoryQuery, { memoryQuery = it }) { confirmClear = true }
                     "Settings" -> {
                         LaunchedEffect(Unit) {
                             apiKey = onLoadKey().orEmpty()
@@ -866,20 +871,68 @@ private fun SkillSection(title: String, skills: List<Triple<String, androidx.com
 }
 
 @Composable
-private fun MemoryPage(memories: List<String>, query: String, onQuery: (String) -> Unit, clear: () -> Unit) {
+private fun MemoryPage(
+    memories: List<String>,
+    personalMemories: List<PersonalMemoryStore.Item>,
+    paused: Boolean,
+    setPaused: (Boolean) -> Unit,
+    deletePersonal: (String) -> Unit,
+    addPersonal: (String) -> Unit,
+    query: String,
+    onQuery: (String) -> Unit,
+    clear: () -> Unit
+) {
+    var newFact by remember { mutableStateOf("") }
     val filtered = memories.filter { it.contains(query, ignoreCase = true) }
+    val saved = personalMemories.filter { it.content.contains(query, ignoreCase = true) || it.category.contains(query, ignoreCase = true) }
     Column(Modifier.fillMaxSize().padding(horizontal = 18.dp)) {
-        Heading("Memory core", "Recent conversation context stored on this device")
-        OutlinedTextField(query,onQuery,Modifier.fillMaxWidth(),placeholder={Text("Search recent context")},
+        Heading("Memory core", "Your saved personal facts and recent conversation context")
+        Surface(color=Panel,shape=RoundedCornerShape(16.dp),modifier=Modifier.fillMaxWidth().padding(bottom=10.dp)) {
+            Column(Modifier.padding(13.dp)) {
+                Row(verticalAlignment=Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("PERSONAL MEMORY",color=Cyan,fontSize=9.sp,fontWeight=FontWeight.Bold,letterSpacing=1.4.sp)
+                        Text(if(paused) "Saving is paused" else "Encrypted on this device",color=Muted,fontSize=10.sp)
+                    }
+                    Switch(checked=!paused,onCheckedChange={setPaused(!it)})
+                }
+                OutlinedTextField(
+                    value=newFact,onValueChange={newFact=it.take(500)},modifier=Modifier.fillMaxWidth(),
+                    placeholder={Text("Add a favourite, interest or plan…")},singleLine=false,maxLines=2,
+                    shape=RoundedCornerShape(13.dp),colors=fieldColors()
+                )
+                Button(onClick={val fact=newFact.trim(); if(fact.isNotEmpty()){addPersonal(fact);newFact=""}},
+                    enabled=newFact.isNotBlank() && !paused,modifier=Modifier.fillMaxWidth()) {
+                    Icon(Icons.Default.Add,null); Spacer(Modifier.width(6.dp)); Text("Save personal memory")
+                }
+                if(saved.isEmpty()) Text("No personal facts saved yet. XYAA only saves facts when you ask it to remember them.",color=Muted,fontSize=10.sp)
+                else {
+                    Text("${saved.size} SAVED FACTS",color=Muted,fontSize=9.sp,letterSpacing=1.2.sp)
+                    saved.take(8).forEach { item ->
+                        Row(Modifier.fillMaxWidth().padding(top=7.dp),verticalAlignment=Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(item.category.uppercase(),color=Cyan,fontSize=8.sp,fontWeight=FontWeight.Bold)
+                                Text(item.content,color=White,fontSize=11.sp,lineHeight=15.sp)
+                            }
+                            IconButton(onClick={deletePersonal(item.id)}) {
+                                Icon(Icons.Default.DeleteOutline,"Delete saved memory",tint=Color(0xFFFF8C9B))
+                            }
+                        }
+                    }
+                    if(saved.size>8) Text("Showing 8 of ${saved.size}; search to find others.",color=Muted,fontSize=9.sp)
+                }
+            }
+        }
+        OutlinedTextField(query,onQuery,Modifier.fillMaxWidth(),placeholder={Text("Search recent context and personal memory")},
             leadingIcon={Icon(Icons.Default.Search,null,tint=Muted)},singleLine=true,shape=RoundedCornerShape(15.dp),colors=fieldColors())
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(10.dp))
         Row(verticalAlignment=Alignment.CenterVertically) {
-            Label("RECENT CONTEXT",Modifier.weight(1f))
-            Text("${filtered.size} recent turns",color=Muted,fontSize=10.sp)
+            Label("RECENT CONVERSATION",Modifier.weight(1f))
+            Text("${filtered.size} turns",color=Muted,fontSize=10.sp)
         }
         if (filtered.isEmpty()) Box(Modifier.weight(1f).fillMaxWidth(),contentAlignment=Alignment.Center) {
-            Text(if(memories.isEmpty()) "No saved conversation context yet." else "No matching memories.",color=Muted)
-        } else LazyColumn(Modifier.weight(1f),contentPadding=PaddingValues(vertical=10.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+            Text(if(memories.isEmpty()) "No recent conversation context yet." else "No matching context.",color=Muted)
+        } else LazyColumn(Modifier.weight(1f),contentPadding=PaddingValues(vertical=8.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
             items(filtered.reversed()) { item ->
                 var expanded by remember(item) { mutableStateOf(false) }
                 val cleaned = AssistantTextFormatter.forDisplay(item)
