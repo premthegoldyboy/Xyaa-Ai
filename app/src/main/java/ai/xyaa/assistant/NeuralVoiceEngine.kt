@@ -29,7 +29,6 @@ class NeuralVoiceEngine(private val context: Context, private val onStatus: (Str
     companion object {
         private const val MODEL_URL = "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-multi-lang-v1_0.tar.bz2"
         private const val MODEL_DIR = "kokoro-multi-lang-v1_0"
-        private const val VOICE_ID = 10 // Kokoro multi-lang v1.0: af_sky
     }
     private val modelRoot = File(context.filesDir, "neural-voice")
     private val modelDir = File(modelRoot, MODEL_DIR)
@@ -45,7 +44,7 @@ class NeuralVoiceEngine(private val context: Context, private val onStatus: (Str
     fun initializeIfInstalled() {
         executor.execute {
             if (!closed && hasModelFiles()) runCatching { createEngine() }
-                .onSuccess { engine = it; onStatus("Ready · Kokoro neural voice (af_sky), offline") }
+                .onSuccess { engine = it; onStatus("${XyaaVoiceProfile.READY_STATUS}") }
                 .onFailure { onStatus("Voice model found but could not load: ${it.message ?: "unknown error"}") }
         }
     }
@@ -54,7 +53,7 @@ class NeuralVoiceEngine(private val context: Context, private val onStatus: (Str
         if (closed || engine != null || !downloading.compareAndSet(false, true)) return
         executor.execute {
             try {
-                onStatus("Downloading Kokoro neural voice… (about 400 MB)")
+                onStatus("Downloading XYAA's Fiona-inspired offline voice… (about 400 MB)")
                 modelRoot.mkdirs()
                 val archive = File(modelRoot, "kokoro-model.tar.bz2.part")
                 val connection = (URL(MODEL_URL).openConnection() as HttpURLConnection).apply {
@@ -93,7 +92,7 @@ class NeuralVoiceEngine(private val context: Context, private val onStatus: (Str
                 archive.delete()
                 check(hasModelFiles()) { "Downloaded archive is missing required Kokoro files" }
                 engine = createEngine()
-                onStatus("Ready · Kokoro neural voice (af_sky), offline")
+                onStatus("${XyaaVoiceProfile.READY_STATUS}")
             } catch (error: Throwable) {
                 onStatus("Neural voice setup failed: ${error.message ?: "unknown error"}. Existing system voice remains available.")
             } finally { downloading.set(false) }
@@ -134,7 +133,7 @@ class NeuralVoiceEngine(private val context: Context, private val onStatus: (Str
                 var consumedChars = 0
                 chunks.forEachIndexed { index, chunk ->
                     if (stale()) return@execute
-                    val audio = active.generate(chunk, sid = VOICE_ID, speed = 1.08f)
+                    val audio = active.generate(chunk, sid = XyaaVoiceProfile.KOKORO_VOICE_ID, speed = XyaaVoiceProfile.KOKORO_SPEED)
                     if (stale()) return@execute
                     if (playbackError.get() != null) throw playbackError.get()!!
                     val chunkStart = consumedChars
@@ -254,7 +253,7 @@ class NeuralVoiceEngine(private val context: Context, private val onStatus: (Str
         return playbackHead(track) >= frames
     }
 
-    private fun speechChunks(text: String, maxChars: Int = 180): List<String> {
+    private fun speechChunks(text: String, maxChars: Int = XyaaVoiceProfile.MAX_CHUNK_CHARS): List<String> {
         val sentences = text.replace("\n", " ").split(Regex("(?<=[.!?])\\s+"))
             .map { it.trim() }.filter { it.isNotEmpty() }
         val chunks = mutableListOf<String>()
