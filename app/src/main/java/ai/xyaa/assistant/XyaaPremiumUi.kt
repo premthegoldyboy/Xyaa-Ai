@@ -954,7 +954,7 @@ private fun CodeStudioPage(
                         }
                         Row(horizontalArrangement=Arrangement.spacedBy(8.dp),modifier=Modifier.padding(top=8.dp)) {
                             TextButton(onClick={editingTask=task;editRequest=task.request}) { Text("Edit task",color=Cyan) }
-                            TextButton(onClick={planTask(task)}) { Text(if(task.plan.isBlank()) "Generate plan" else "Regenerate plan",color=Cyan) }
+                            TextButton(onClick={planTask(task)},enabled=task.status!="Planning…") { Text(if(task.status=="Planning…") "Planning…" else if(task.plan.isBlank()) "Generate plan" else "Regenerate plan",color=Cyan) }
                             TextButton(onClick={shareTask(task)}) { Text("Export brief",color=Cyan) }
                         }
                     }
