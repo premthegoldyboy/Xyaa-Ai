@@ -127,6 +127,8 @@ internal fun XyaaPremiumApp(
     codeStudioTasks: List<CodeStudioTaskStore.Task>,
     onCreateCodeTask: (String) -> Unit,
     onDeleteCodeTask: (String) -> Unit,
+    onEditCodeTask: (String, String) -> Unit,
+    onShareCodeTask: (CodeStudioTaskStore.Task) -> Unit,
     liveVoiceActive: Boolean,
     liveVoiceStatus: String,
     liveTranscript: String,
@@ -220,7 +222,7 @@ internal fun XyaaPremiumApp(
                         } else submit(command)
                     }
                     "Memory" -> MemoryPage(recentMemory, personalMemories, personalMemoryPaused, onPausePersonalMemory, onDeletePersonalMemory, onAddPersonalMemory, onEditPersonalMemory, onExportPersonalMemory, memoryQuery, { memoryQuery = it }) { confirmClear = true }
-                    "Code" -> CodeStudioPage(codeStudioTasks, onCreateCodeTask, onDeleteCodeTask)
+                    "Code" -> CodeStudioPage(codeStudioTasks, onCreateCodeTask, onDeleteCodeTask, onEditCodeTask, onShareCodeTask)
                     "Settings" -> {
                         LaunchedEffect(Unit) {
                             apiKey = onLoadKey().orEmpty()
@@ -880,10 +882,14 @@ private fun SkillSection(title: String, skills: List<Triple<String, androidx.com
 private fun CodeStudioPage(
     tasks: List<CodeStudioTaskStore.Task>,
     createTask: (String) -> Unit,
-    deleteTask: (String) -> Unit
+    deleteTask: (String) -> Unit,
+    editTask: (String, String) -> Unit,
+    shareTask: (CodeStudioTaskStore.Task) -> Unit
 ) {
     var request by remember { mutableStateOf("") }
     var expandedId by remember { mutableStateOf<String?>(null) }
+    var editingTask by remember { mutableStateOf<CodeStudioTaskStore.Task?>(null) }
+    var editRequest by remember { mutableStateOf("") }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal=18.dp)) {
         Heading("Code Studio", "Turn development ideas into tracked coding tasks")
         Surface(color=Panel,shape=RoundedCornerShape(17.dp),modifier=Modifier.fillMaxWidth().padding(bottom=12.dp)) {
@@ -928,12 +934,28 @@ private fun CodeStudioPage(
                     }
                     Text(task.request,color=White,fontSize=12.sp,lineHeight=18.sp,maxLines=if(expanded) Int.MAX_VALUE else 3,
                         overflow=TextOverflow.Ellipsis)
-                    if(expanded) Text("Task saved locally and encrypted. It has not been sent to a remote worker or executed.",
-                        color=Muted,fontSize=10.sp,modifier=Modifier.padding(top=8.dp))
+                    if(expanded) {
+                        Text("Task saved locally and encrypted. It has not been sent to a remote worker or executed.",
+                            color=Muted,fontSize=10.sp,modifier=Modifier.padding(top=8.dp))
+                        Row(horizontalArrangement=Arrangement.spacedBy(8.dp),modifier=Modifier.padding(top=8.dp)) {
+                            TextButton(onClick={editingTask=task;editRequest=task.request}) { Text("Edit task",color=Cyan) }
+                            TextButton(onClick={shareTask(task)}) { Text("Export brief",color=Cyan) }
+                        }
+                    }
                 }
             }
         }
         Spacer(Modifier.height(16.dp))
+    }
+    editingTask?.let { task ->
+        AlertDialog(
+            onDismissRequest={editingTask=null},containerColor=Panel2,
+            title={Text("Edit development task",color=White)},
+            text={OutlinedTextField(value=editRequest,onValueChange={editRequest=it.take(4000)},
+                modifier=Modifier.fillMaxWidth(),minLines=3,maxLines=6,colors=fieldColors())},
+            confirmButton={TextButton(onClick={editTask(task.id,editRequest);editingTask=null}) { Text("Save changes",color=Cyan) }},
+            dismissButton={TextButton(onClick={editingTask=null}) { Text("Cancel",color=Muted) }}
+        )
     }
 }
 
