@@ -477,6 +477,20 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             runOnUiThread { answer(message, true); say(message) }
             return
         }
+        val forgetMatch = Regex("(?i)^\\\\s*(?:please\\\\s+)?forget\\\\s+(.+)$").find(prompt)
+        if (forgetMatch != null) {
+            val target = forgetMatch.groupValues[1].trim()
+            val removed = if (Regex("(?i)\\\\b(everything|all|all my memories)\\\\b").containsMatchIn(target)) {
+                val count = personalMemoryStore.all().size
+                personalMemoryStore.clear()
+                count
+            } else personalMemoryStore.deleteMatching(target.removePrefix("that ").removePrefix("that "))
+            personalMemories.value = personalMemoryStore.all()
+            val message = if (removed > 0) "Forgot $removed saved personal memory item(s)." else "I couldn't find a saved personal memory matching that request."
+            rememberTurn("assistant", message)
+            runOnUiThread { answer(message, true); say(message) }
+            return
+        }
         if (Regex("(?i)\\b(what do you remember about me|what are my (?:favourites|favorites|interests|plans)|show my personal memory)\\b").containsMatchIn(prompt)) {
             val facts = personalMemoryStore.all()
             val message = if (facts.isEmpty()) "I don't have any saved personal memories yet. You can say, 'Remember that I enjoy…' to save something." else
