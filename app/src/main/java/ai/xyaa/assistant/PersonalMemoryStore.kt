@@ -75,11 +75,12 @@ class PersonalMemoryStore(context: Context) {
         val items = readUnsafe()
         if (items.isEmpty()) return@synchronized ""
         val terms = Regex("[a-z0-9]{3,}").findAll(query.lowercase()).map { it.value }.toSet()
+        if (terms.isEmpty()) return@synchronized ""
         val ranked = items.map { item ->
             val haystack = (item.category + " " + item.content).lowercase()
             item to terms.count { haystack.contains(it) }
         }.sortedWith(compareByDescending<Pair<Item, Int>> { it.second }.thenByDescending { it.first.updatedAt })
-        val selected = ranked.filter { it.second > 0 }.take(limit).ifEmpty { ranked.take(minOf(3, limit)) }
+        val selected = ranked.filter { it.second > 0 }.take(limit)
         selected.joinToString("\n") { "- [${it.first.category}] ${it.first.content}" }.take(2400)
     }
 
