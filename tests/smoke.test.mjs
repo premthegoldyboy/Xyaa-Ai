@@ -135,6 +135,7 @@ test('personal memory is encrypted, explicit, bounded, and independently control
   assert.match(store, /fun delete/);
   assert.match(store, /maxItems = 200/);
   assert.match(activity, /rememberMatch/);
+  assert.match(activity, /forgetMatch/);
   assert.ok(activity.includes("personalMemoryStore.contextForPrompt"));
   assert.match(ui, /PERSONAL MEMORY/);
   assert.match(ui, /onPausePersonalMemory/);
