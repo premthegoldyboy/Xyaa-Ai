@@ -108,3 +108,21 @@ Shared integration happens continuously through versioned interfaces and contrac
 - Code Studio can execute an approved change in an isolated worker, run tests/build, and return a reviewable diff plus artifact.
 - Both capabilities are reachable from the Android app, have clear permission states, and fail safely.
 - CI build and automated tests pass. Physical-device testing is reported separately and never implied by CI success.
+
+
+## Implementation status — 2026-11-19
+
+### Personal Memory — first functional increment
+- Implemented `PersonalMemoryStore` as a separate store from short-term `ConversationMemory`.
+- Facts are written only from an explicit “remember …” command or the Memory screen's add control.
+- Payload is encrypted with AES-GCM using a non-exportable Android Keystore key.
+- Supports categories, bounded storage, pause/resume, deletion, listing, and relevance-filtered prompt context.
+- Credentials-like phrases are rejected. Memory remains local; no cloud sync is enabled.
+- The Memory screen exposes saved facts separately from recent transcript turns.
+- Remaining work: edit flow, richer recall ranking, export, migration and device-level privacy testing.
+
+### Code Studio — first functional increment
+- Added an encrypted local task inbox and a Code Studio screen for capturing, viewing, and deleting development requests.
+- It explicitly reports that the isolated cloud coding/build runner is not connected. It does not pretend a task was executed and does not execute code on-device.
+- Remaining critical work: authenticated GitHub App/OAuth integration, deployable orchestrator, ephemeral isolated workers, repository checkout/patch workflow, allowlisted tests/build, artifact delivery, and end-to-end approval controls.
+- Code Studio task capture can progress independently from Personal Memory. Remote execution is a separate integration milestone, not yet available in the app.
