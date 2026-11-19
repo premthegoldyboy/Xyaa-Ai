@@ -52,7 +52,8 @@ class CodeStudioTaskStore(context: Context) {
         val tasks = readUnsafe().toMutableList()
         val index = tasks.indexOfFirst { it.id == id }
         if (index < 0) return@synchronized null
-        val updated = tasks[index].copy(request = cleaned, updatedAt = System.currentTimeMillis())
+        val updated = tasks[index].copy(request = cleaned, plan = "", approved = false,
+            status = "Queued · runner not connected", updatedAt = System.currentTimeMillis())
         tasks[index] = updated
         writeUnsafe(tasks)
         updated
@@ -79,12 +80,12 @@ class CodeStudioTaskStore(context: Context) {
     }
 
     /** Persist an AI-generated plan; planning never executes code or changes a repository. */
-    fun savePlan(id: String, plan: String): Task? = synchronized(lock) {
+    fun savePlan(id: String, plan: String, expectedRequest: String? = null): Task? = synchronized(lock) {
         val cleaned = plan.trim().take(12000)
         if (cleaned.isBlank()) return@synchronized null
         val tasks = readUnsafe().toMutableList()
         val index = tasks.indexOfFirst { it.id == id }
-        if (index < 0) return@synchronized null
+        if (index < 0 || (expectedRequest != null && tasks[index].request != expectedRequest)) return@synchronized null
         val updated = tasks[index].copy(plan = cleaned, approved = false,
             status = "Plan ready · awaiting approval", updatedAt = System.currentTimeMillis())
         tasks[index] = updated
