@@ -124,7 +124,7 @@ class NeuralVoiceEngine(private val context: Context, private val onStatus: (Str
             fun stale() = closed || gen != generation.get()
             val playedChars = AtomicInteger(0)
             val playbackError = AtomicReference<Throwable?>(null)
-            val slots = Semaphore(2)               // synthesize at most two chunks ahead of playback
+            val slots = Semaphore(XyaaVoiceProfile.MAX_QUEUED_CHUNKS) // keep a deeper audio queue to avoid audible gaps
             val framesWritten = AtomicLong(0)
             val lastPlayback = AtomicReference<Future<*>?>(null)
             val lastReveal = AtomicReference<Future<*>?>(null)
