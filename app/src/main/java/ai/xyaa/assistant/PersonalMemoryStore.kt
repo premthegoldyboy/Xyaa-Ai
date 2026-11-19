@@ -46,10 +46,11 @@ class PersonalMemoryStore(context: Context) {
         val items = readUnsafe().toMutableList()
         val duplicate = items.indexOfFirst { it.content.equals(cleaned, ignoreCase = true) }
         val now = System.currentTimeMillis()
+        val safeCategory = category.trim().lowercase().take(32).ifBlank { "general" }
         val item = if (duplicate >= 0) {
-            items[duplicate].copy(category = category, updatedAt = now).also { items[duplicate] = it }
+            items[duplicate].copy(category = safeCategory, updatedAt = now).also { items[duplicate] = it }
         } else {
-            Item(java.util.UUID.randomUUID().toString(), category, cleaned, now, now).also { items.add(it) }
+            Item(java.util.UUID.randomUUID().toString(), safeCategory, cleaned, now, now).also { items.add(it) }
         }
         while (items.size > maxItems) items.removeAt(0)
         writeUnsafe(items)
@@ -59,7 +60,7 @@ class PersonalMemoryStore(context: Context) {
     /** Updates an existing user-approved fact without creating a second copy. */
     fun update(id: String, content: String): Item? = synchronized(lock) {
         val cleaned = content.trim().take(maxContentChars)
-        if (cleaned.isBlank() || containsCredentialLikeData(cleaned)) return@synchronized null
+        if (cleaned.isBlank() || isPaused() || containsCredentialLikeData(cleaned)) return@synchronized null
         val items = readUnsafe().toMutableList()
         val index = items.indexOfFirst { it.id == id }
         if (index < 0) return@synchronized null
@@ -166,8 +167,17 @@ class PersonalMemoryStore(context: Context) {
 
     private fun containsCredentialLikeData(value: String): Boolean {
         val lower = value.lowercase()
-        return listOf("password is", "my password", "api key", "access token", "refresh token",
-            "one-time password", "otp is", "secret key", "private key").any(lower::contains)
+        val credentialPhrases = listOf(
+            "password", "passcode", "api key", "access token", "refresh token",
+            "bearer token", "one-time password", " otp", "secret key", "private key",
+            "recovery code", "security code", "client secret"
+        )
+        if (credentialPhrases.any(lower::contains)) return true
+        // Catch common credential assignments even when the user does not label them as secrets.
+        if (Regex("""\\b(?:token|secret|credential|password|passwd|api[_ -]?key)\\s*[:=]\\s*\\S+""", RegexOption.IGNORE_CASE).containsMatchIn(value)) return true
+        // PEM/private-key material and long opaque key-like strings should never enter memory.
+        if (value.contains("-----BEGIN") && value.contains("PRIVATE KEY")) return true
+        return Regex("""\\b[A-Za-z0-9_-]{32,}\\b""").containsMatchIn(value)
     }
 
     private fun classify(value: String): String {
