@@ -24,7 +24,9 @@ class CodeStudioTaskStore(context: Context) {
         val request: String,
         val status: String,
         val createdAt: Long,
-        val updatedAt: Long
+        val updatedAt: Long,
+        val plan: String = "",
+        val approved: Boolean = false
     )
 
     private val prefs = context.getSharedPreferences("xyaa_code_studio_v1", Context.MODE_PRIVATE)
@@ -56,6 +58,32 @@ class CodeStudioTaskStore(context: Context) {
         updated
     }
 
+    /** Persist an AI-generated plan; planning never executes code or changes a repository. */
+    fun savePlan(id: String, plan: String): Task? = synchronized(lock) {
+        val cleaned = plan.trim().take(12000)
+        if (cleaned.isBlank()) return@synchronized null
+        val tasks = readUnsafe().toMutableList()
+        val index = tasks.indexOfFirst { it.id == id }
+        if (index < 0) return@synchronized null
+        val updated = tasks[index].copy(plan = cleaned, approved = false,
+            status = "Plan ready · awaiting approval", updatedAt = System.currentTimeMillis())
+        tasks[index] = updated
+        writeUnsafe(tasks)
+        updated
+    }
+
+    fun setApproved(id: String, approved: Boolean): Task? = synchronized(lock) {
+        val tasks = readUnsafe().toMutableList()
+        val index = tasks.indexOfFirst { it.id == id }
+        if (index < 0 || tasks[index].plan.isBlank()) return@synchronized null
+        val updated = tasks[index].copy(approved = approved,
+            status = if (approved) "Plan approved · runner not connected" else "Plan ready · approval withdrawn",
+            updatedAt = System.currentTimeMillis())
+        tasks[index] = updated
+        writeUnsafe(tasks)
+        updated
+    }
+
     fun all(): List<Task> = synchronized(lock) { readUnsafe().sortedByDescending { it.createdAt } }
 
     fun delete(id: String) = synchronized(lock) {
@@ -78,7 +106,8 @@ class CodeStudioTaskStore(context: Context) {
                 val request = item.optString("request")
                 if (id.isBlank() || request.isBlank()) null else Task(
                     id, request.take(4000), item.optString("status").ifBlank { "Queued" },
-                    item.optLong("createdAt"), item.optLong("updatedAt")
+                    item.optLong("createdAt"), item.optLong("updatedAt"),
+                    item.optString("plan").take(12000), item.optBoolean("approved", false)
                 )
             }.takeLast(maxTasks)
         }.getOrDefault(emptyList())
@@ -88,7 +117,8 @@ class CodeStudioTaskStore(context: Context) {
         val json = JSONArray()
         tasks.forEach { task ->
             json.put(JSONObject().put("id", task.id).put("request", task.request)
-                .put("status", task.status).put("createdAt", task.createdAt).put("updatedAt", task.updatedAt))
+                .put("status", task.status).put("createdAt", task.createdAt).put("updatedAt", task.updatedAt)
+                .put("plan", task.plan).put("approved", task.approved))
         }
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.ENCRYPT_MODE, getKey())
