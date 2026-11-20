@@ -19,6 +19,7 @@ if not api_key:
 
 # Only application Kotlin and Android resources may enter model context or be patched.
 # Build scripts, Gradle properties, local.properties, CI, tests, and credentials stay out.
+# No .github/workflows/ files are read or patched.
 SAFE_ROOTS = ("app/src/main/java/ai/xyaa/assistant/", "app/src/main/res/")
 SAFE_SUFFIXES = {".kt", ".xml"}
 SKIP_PARTS = {".git", ".gradle", "build", ".idea", "node_modules", "dist", "target"}
