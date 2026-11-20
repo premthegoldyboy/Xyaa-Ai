@@ -194,3 +194,15 @@ test('Code Studio AI worker is isolated, review-only, and validates generated pa
   assert.match(workflow, /upload-artifact@v4/);
   assert.doesNotMatch(workflow, /contents: write|git push|pull-requests: write/);
 });
+
+
+test('Code Studio AI worker sends and patches only allowlisted Android app source', () => {
+  const worker = readFileSync(new URL('../scripts/code_studio_worker.py', import.meta.url), 'utf8');
+  assert.match(worker, /SAFE_ROOTS = \("app\\/src\\/main\\/java\\/ai\\/xyaa\\/assistant\\/", "app\\/src\\/main\\/res\\/"\)/);
+  assert.match(worker, /SAFE_SUFFIXES = \{".kt", ".xml"\}/);
+  assert.match(worker, /SECRET_NAME/);
+  assert.match(worker, /Patch touches a path outside the Android source allowlist/);
+  assert.match(worker, /ALLOWLISTED ANDROID SOURCE FILES/);
+  assert.doesNotMatch(worker, /\\.github\\/workflows\\//);
+  assert.doesNotMatch(worker, /p\\.suffix not in allowed/);
+});
