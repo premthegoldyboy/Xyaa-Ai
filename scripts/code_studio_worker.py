@@ -22,7 +22,7 @@ if not api_key:
 SAFE_ROOTS = ("app/src/main/java/ai/xyaa/assistant/", "app/src/main/res/")
 SAFE_SUFFIXES = {".kt", ".xml"}
 SKIP_PARTS = {".git", ".gradle", "build", ".idea", "node_modules", "dist", "target"}
-SECRET_NAME = re.compile(r"(local\\.properties|gradle\\.properties|keystore|\\.jks$|\\.keystore$|\\.pem$|\\.p12$)", re.I)
+SECRET_NAME = re.compile(r"(local\.properties|gradle\.properties|keystore|\.jks$|\.keystore$|\.pem$|\.p12$)", re.I)
 files, total = [], 0
 for path in sorted(ROOT.rglob("*")):
     relative = path.relative_to(ROOT).as_posix()
@@ -35,8 +35,8 @@ for path in sorted(ROOT.rglob("*")):
     except (UnicodeDecodeError, OSError):
         continue
     if len(body) > 24000:
-        body = body[:24000] + "\\n[TRUNCATED]"
-    entry = f"\\n===== FILE: {relative} =====\\n{body}\\n"
+        body = body[:24000] + "\n[TRUNCATED]"
+    entry = f"\n===== FILE: {relative} =====\n{body}\n"
     if total + len(entry) > 180000:
         break
     files.append(entry)
@@ -53,7 +53,7 @@ signing configuration, CI permissions, or deployment settings. Do not add networ
 telemetry, obfuscated code, destructive commands, or hidden behavior. Preserve architecture.
 If the task cannot safely be implemented from supplied source, return exactly NO_SAFE_PATCH.
 TASK:
-""" + task + "\\nALLOWLISTED ANDROID SOURCE FILES:\\n" + "".join(files)
+""" + task + "\nALLOWLISTED ANDROID SOURCE FILES:\n" + "".join(files)
 
 payload = json.dumps({
     "contents": [{"parts": [{"text": prompt}]}],
@@ -66,8 +66,8 @@ with urllib.request.urlopen(request, timeout=180) as response:
 
 parts = result.get("candidates", [{}])[0].get("content", {}).get("parts", [])
 patch = "".join(part.get("text", "") for part in parts).strip()
-if patch.startswith("```"):
-    patch = patch.split("\\n", 1)[1].rsplit("```", 1)[0].strip()
+if patch.startswith("\`\`\`"):
+    patch = patch.split("\n", 1)[1].rsplit("\`\`\`", 1)[0].strip()
 if patch == "NO_SAFE_PATCH" or not patch:
     raise SystemExit("Worker did not produce a safe patch.")
 if not patch.startswith("diff --git "):
@@ -80,7 +80,7 @@ def validate_path(raw_path: str) -> None:
     if path.startswith(("a/", "b/")):
         path = path[2:]
     candidate = pathlib.PurePosixPath(path)
-    if candidate.is_absolute() or ".." in candidate.parts or "\\\\" in path:
+    if candidate.is_absolute() or ".." in candidate.parts or "\\" in path:
         raise SystemExit(f"Patch contains an unsafe path: {raw_path}")
     normalized = candidate.as_posix()
     if not normalized.startswith(SAFE_ROOTS) or candidate.suffix not in SAFE_SUFFIXES:
@@ -95,12 +95,12 @@ for line in patch.splitlines():
         validate_path("a/" + match.group(1))
         validate_path("b/" + match.group(2))
     elif line.startswith(("+++ ", "--- ")):
-        validate_path(line[4:].split("\\t", 1)[0])
+        validate_path(line[4:].split("\t", 1)[0])
     elif line.startswith(("rename from ", "rename to ", "copy from ", "copy to ")):
         validate_path(line.split(" ", 2)[2])
 
 patch_file = ROOT / "code-studio.patch"
-patch_file.write_text(patch + "\\n", encoding="utf-8")
+patch_file.write_text(patch + "\n", encoding="utf-8")
 subprocess.run(["git", "apply", "--check", str(patch_file)], check=True)
 subprocess.run(["git", "apply", str(patch_file)], check=True)
 print(f"Applied allowlisted review-only patch ({len(patch)} characters).")
