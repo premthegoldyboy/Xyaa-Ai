@@ -17,7 +17,7 @@ Native Kotlin + Jetpack Compose assistant.
 - XYAA opens the system dialler rather than placing calls automatically.
 - Timers and alarms open Android's own confirmation/setup UI.
 - Notes remain in app-local preferences.
-- The Gemini key is encrypted at rest with Android Keystore. Prompts are sent to Google's Gemini API when AI fallback is used.
+- Provider keys are encrypted at rest with Android Keystore. Prompts and relevant recent-conversation or user-approved memory context may be sent to the configured Gemini, Groq, or DeepSeek provider to generate a reply.
 - This is an early foundation. Test each device action on the target phone; Android vendors may handle intents differently.
 
 
@@ -37,7 +37,7 @@ These items are intentionally marked by implementation status rather than presen
 
 
 ## XYAA Intelligence Core (early implementation)
-- **Personal Memory:** explicit user-directed facts are stored separately from recent chat turns, encrypted with Android Keystore AES-GCM, and can be paused or deleted from the Memory screen. Local-only; no cloud sync.
+- **Personal Memory:** explicit user-directed facts are stored separately from recent chat turns, encrypted with Android Keystore AES-GCM, and can be paused or deleted from the Memory screen. Storage is local with no background cloud sync; relevant matching facts may be included in prompts sent to the configured AI provider when you chat.
 - **Code Studio:** encrypted task inbox captures development requests. Remote code execution and cloud builds are not connected yet; the app clearly reports this rather than claiming tasks have run.
 - These tracks are developed independently and integrated through shared context and approval boundaries.
 
