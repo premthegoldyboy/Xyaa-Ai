@@ -50,6 +50,7 @@ import java.util.Locale
 
 class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     private var tts: TextToSpeech? = null
+    private val requestSequence = java.util.concurrent.atomic.AtomicLong(0L)
     private lateinit var skills: SkillEngine
     private lateinit var managementAgent: ManagementAgent
     private lateinit var neuralVoice: NeuralVoiceEngine
@@ -549,8 +550,19 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             .onFailure { say("I couldn't open the folder picker: ${it.message.orEmpty().take(100)}") }
     }
 
-    private fun process(prompt: String, answer: (String, Boolean) -> Unit) {
-        rememberTurn("user", prompt)
+    private fun process(prompt: String, answerCallback: (String, Boolean) -> Unit) {
+        val requestId = requestSequence.incrementAndGet()
+        stopSpeech(completeInterrupted = false)
+        val answer: (String, Boolean) -> Unit = { value, complete ->
+            if (requestSequence.get() == requestId) answerCallback(value, complete)
+        }
+        val rememberForRequest: (String, String) -> Unit = { role, value ->
+            if (requestSequence.get() == requestId) rememberTurn(role, value)
+        }
+        val sayForRequest: (String) -> Unit = { value ->
+            if (requestSequence.get() == requestId) say(value)
+        }
+        rememberForRequest("user", prompt)
         val rememberMatch = Regex("(?i)^\\s*(?:please\\s+)?remember(?:\\s+that)?\\s+(.+)$").find(prompt)
         if (rememberMatch != null && !Regex("(?i)\\b(do you remember|what do you remember|remember when)\\b").containsMatchIn(prompt)) {
             val saved = personalMemoryStore.add(rememberMatch.groupValues[1])
@@ -559,8 +571,8 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 saved != null -> "Saved to your personal memory under ${saved.category}. You can view, edit or delete it in the Memory tab."
                 else -> "I couldn't save that. XYAA doesn't store credentials or secret keys in personal memory."
             }
-            rememberTurn("assistant", message)
-            runOnUiThread { answer(message, true); say(message) }
+            rememberForRequest("assistant", message)
+            runOnUiThread { answer(message, true); sayForRequest(message) }
             return
         }
         val forgetMatch = Regex("(?i)^\\s*(?:please\\s+)?forget\\s+(.+)$").find(prompt)
@@ -573,16 +585,16 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             } else personalMemoryStore.deleteMatching(target.removePrefix("that "))
             personalMemories.value = personalMemoryStore.all()
             val message = if (removed > 0) "Forgot $removed saved personal memory item(s)." else "I couldn't find a saved personal memory matching that request."
-            rememberTurn("assistant", message)
-            runOnUiThread { answer(message, true); say(message) }
+            rememberForRequest("assistant", message)
+            runOnUiThread { answer(message, true); sayForRequest(message) }
             return
         }
         if (Regex("(?i)\\b(what do you remember about me|what are my (?:favourites|favorites|interests|plans)|show my personal memory)\\b").containsMatchIn(prompt)) {
             val facts = personalMemoryStore.all()
             val message = if (facts.isEmpty()) "I don't have any saved personal memories yet. You can say, 'Remember that I enjoy…' to save something." else
                 "Here's what I have saved in your personal memory:\n" + facts.joinToString("\n") { "• [${it.category}] ${it.content}" }
-            rememberTurn("assistant", message)
-            runOnUiThread { answer(message, true); say(message) }
+            rememberForRequest("assistant", message)
+            runOnUiThread { answer(message, true); sayForRequest(message) }
             return
         }
         // A single routing decision prevents generic browser skills from stealing research requests.
@@ -597,9 +609,9 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         val pdfRequest = agentPlan.createPdf
         val managed = if (pdfRequest || agentPlan.kind != XYAAAgentKind.MANAGEMENT) null else managementAgent.execute(prompt)
         if (managed != null) {
-            rememberTurn("assistant", managed)
+            rememberForRequest("assistant", managed)
             answer(managed, true)
-            say(managed)
+            sayForRequest(managed)
             return
         }
         if (!pdfRequest && agentPlan.kind == XYAAAgentKind.MANAGEMENT && managementAgent.isManagementRequest(prompt)) {
@@ -609,9 +621,9 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             val deepSeek = providers.read("deepseek")
             if (key.isNullOrBlank() && groq.isNullOrBlank() && deepSeek.isNullOrBlank()) {
                 val message = "The management agent needs an AI provider key to interpret that request. Simple note and PDF commands still work offline."
-                rememberTurn("assistant", message)
+                rememberForRequest("assistant", message)
                 answer(message, true)
-                say(message)
+                sayForRequest(message)
                 return
             }
             answer("XYAA management agent is planning…", false)
@@ -622,7 +634,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 }.getOrElse { "Could not create a safe management plan: ${it.message.orEmpty().take(120)}" }
                 val result = managementAgent.executePlan(plan, prompt)
                     ?: "I couldn't turn that request into a safe file operation. Please specify the note or PDF and the action."
-                rememberTurn("assistant", result)
+                rememberForRequest("assistant", result)
                 runOnUiThread {
                     answer(result, true)
                     speakChatAnswer(result, onProgress = { visible -> answer(visible, false) }, onComplete = { answer(result, true) })
@@ -632,25 +644,25 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         }
         if (!pdfRequest && agentPlan.kind == XYAAAgentKind.LINKS) {
             val result = LinkAgent.generate(prompt)
-            rememberTurn("assistant", result)
+            rememberForRequest("assistant", result)
             answer(result, true)
-            say("Links prepared.")
+            sayForRequest("Links prepared.")
             return
         }
         if (!pdfRequest && agentPlan.kind == XYAAAgentKind.MEMORY) {
             val recalled = ConversationMemoryAgent.execute(prompt, conversationMemory)
             if (recalled != null) {
-                rememberTurn("assistant", recalled)
+                rememberForRequest("assistant", recalled)
                 answer(recalled, true)
-                say(recalled)
+                sayForRequest(recalled)
                 return
             }
         }
         val local = if (pdfRequest || agentPlan.needsResearch) null else skills.execute(prompt)
         if (local != null) {
-            rememberTurn("assistant", local)
+            rememberForRequest("assistant", local)
             answer(local, true)
-            say(local)
+            sayForRequest(local)
             return
         }
         val key = SecureKeyStore(this).read()
@@ -661,9 +673,9 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         val firecrawlKey = providerKeys.read("firecrawl")
         if (key.isNullOrBlank() && groqKey.isNullOrBlank() && deepSeekKey.isNullOrBlank()) {
             val message = "I can handle built-in skills offline. Add a Gemini, Groq, or DeepSeek API key in Settings to enable AI conversations."
-            rememberTurn("assistant", message)
+            rememberForRequest("assistant", message)
             answer(message, true)
-            say(message)
+            sayForRequest(message)
             return
         }
 
@@ -693,7 +705,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                     val spokenSummary = result.spoken.ifBlank { "Research report completed." }
                     if (pdfRequest) {
                         pdfDraft = rendered
-                        rememberTurn("assistant", "Created a research-backed PDF about ${result.topic}.")
+                        rememberForRequest("assistant", "Created a research-backed PDF about ${result.topic}.")
                         runOnUiThread {
                             answer("Preparing your PDF…", false)
                             // The complete document belongs in the PDF, not duplicated in the chat bubble.
@@ -707,7 +719,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                             )
                         }
                     } else {
-                        rememberTurn("assistant", spokenSummary)
+                        rememberForRequest("assistant", spokenSummary)
                         runOnUiThread {
                             answer("Research complete. Speaking the summary…", false)
                             speakChatAnswer(
@@ -719,7 +731,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                     }
                 }.onFailure { error ->
                     val message = "Research failed: ${error.message.orEmpty().take(180)}"
-                    rememberTurn("assistant", message)
+                    rememberForRequest("assistant", message)
                     runOnUiThread { answer(message, false); speakChatAnswer(message, { answer(it, false) }) { answer(message, true) } }
                 }
                 return@Thread
@@ -749,20 +761,20 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 )
             }.getOrElse { formatAiError(it) }
 
-            if (pdfRequest) rememberTurn("assistant", "Created the requested PDF document.")
-            else rememberTurn("assistant", response)
+            if (pdfRequest) rememberForRequest("assistant", "Created the requested PDF document.")
+            else rememberForRequest("assistant", response)
             runOnUiThread {
                 if (pdfRequest && response.isNotBlank()) {
                     pdfDraft = response
                     answer("Your PDF is ready. Choose a location to save it.", true)
                     openPdfPicker()
-                    say("Your PDF is ready. Choose a location to save it.")
+                    sayForRequest("Your PDF is ready. Choose a location to save it.")
                 } else {
                     // Text streams during generation. Keep the completed answer visible while audio plays.
                     val visibleAnswer = AssistantTextFormatter.forRichDisplay(response)
                         .ifBlank { "I couldn't produce a user-facing answer. Please try again." }
                     answer(visibleAnswer, true)
-                    say(visibleAnswer)
+                    sayForRequest(visibleAnswer)
                 }
             }
         }.start()
