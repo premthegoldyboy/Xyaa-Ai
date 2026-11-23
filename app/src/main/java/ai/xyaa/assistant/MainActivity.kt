@@ -472,7 +472,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             }.getOrElse { "Planning failed: ${it.message.orEmpty().take(180)}" }
             runOnUiThread {
                 if (plan.startsWith("Planning failed:")) {
-                    codeStudioTaskStore.setPlanningFailed(task.id)
+                    codeStudioTaskStore.setPlanningFailed(task.id, task.request)
                     codeStudioTasks.value = codeStudioTaskStore.all()
                     android.widget.Toast.makeText(this, plan, android.widget.Toast.LENGTH_LONG).show()
                 } else {
