@@ -42,6 +42,7 @@ test('personal memory rejects credential-like content before encryption', () => 
 test('recent conversation history does not persist credential-like user or assistant text', () => {
   const history = readFileSync(new URL('../app/src/main/java/ai/xyaa/assistant/ConversationMemory.kt', import.meta.url), 'utf8');
   assert.match(history, /containsCredentialLikeData\(text\)/);
+  assert.match(history, /text\\.isBlank\\(\\) \\|\\| containsCredentialLikeData\\(text\\)/);
   assert.match(history, /password.*passcode.*api key.*access token/);
   assert.match(history, /PRIVATE KEY/);
   assert.match(history, /A-Za-z0-9_-\]\{32,\}/);
