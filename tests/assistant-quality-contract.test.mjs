@@ -109,3 +109,13 @@ test('simple Google searches and weather requests stay on the built-in browser s
   assert.ok(skills.includes("search(?: for)?"));
   assert.match(skills, /val weather = Regex/);
 });
+
+
+test('microphone and notification permissions are checked at the component that uses them', () => {
+  const live = read('app/src/main/java/ai/xyaa/assistant/GeminiLiveVoiceSession.kt');
+  const wake = read('app/src/main/java/ai/xyaa/assistant/WakeWordService.kt');
+  const reminder = read('app/src/main/java/ai/xyaa/assistant/ReminderWorker.kt');
+  assert.match(live, /checkSelfPermission\(context, Manifest\.permission\.RECORD_AUDIO\)/);
+  assert.match(wake, /checkSelfPermission\(this, android\.Manifest\.permission\.RECORD_AUDIO\)/);
+  assert.match(reminder, /checkSelfPermission\(applicationContext, Manifest\.permission\.POST_NOTIFICATIONS\)/);
+});
