@@ -227,7 +227,7 @@ $context"""
                 .put("search_depth", "advanced")
                 .put("max_results", 10)
                 .put("include_answer", false)
-                .put("time_range", if (isLast30DaysRequest(topic)) "month" else "")
+                .apply { if (isLast30DaysRequest(topic)) put("time_range", "month") }
             connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
             val status = connection.responseCode
             if (status !in 200..299) throw IllegalStateException("Tavily HTTP $status")
