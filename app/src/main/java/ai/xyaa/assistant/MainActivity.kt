@@ -64,6 +64,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     private var liveVoiceSession: GeminiLiveVoiceSession? = null
     private var pdfDraft = ""
     private var speechRecognizer: SpeechRecognizer? = null
+    private var pendingVoiceRecognition: ((String) -> Unit)? = null
     private val voiceInputStatus = mutableStateOf("")
     private val liveVoiceActive = mutableStateOf(false)
     private val liveVoiceStatus = mutableStateOf("Live voice is off")
@@ -107,7 +108,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         setContent {
             XyaaPremiumApp(
                 onSend = { prompt, answer -> process(prompt, answer) },
-                onVoice = ::startVoiceInput,
+                onVoice = { onRecognized -> startVoiceInput(onRecognized) },
                 voiceInputStatus = voiceInputStatus.value,
                 onSaveKey = { key -> SecureKeyStore(this).save(key) },
                 onLoadKey = { SecureKeyStore(this).read() },
@@ -1153,7 +1154,8 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         }
     }
 
-    private fun startVoiceInput() {
+    private fun startVoiceInput(onRecognized: (String) -> Unit) {
+        pendingVoiceRecognition = onRecognized
         stopSpeech() // the recognizer must not hear XYAA's own voice
         if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             voiceInputStatus.value = "Microphone permission is needed for voice input."
@@ -1207,7 +1209,8 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                             voiceInputStatus.value = "I didn't receive any words. Tap the mic and try again."
                         } else {
                             voiceInputStatus.value = "Heard: $spoken"
-                            process(spoken) { _, _ -> }
+                            pendingVoiceRecognition?.invoke(spoken)
+                            pendingVoiceRecognition = null
                             Handler(Looper.getMainLooper()).postDelayed({
                                 if (voiceInputStatus.value == "Heard: $spoken") voiceInputStatus.value = ""
                             }, 5000L)
