@@ -213,3 +213,11 @@ test('hidden protocol blocks are stripped before a spoken summary enters convers
   assert.match(formatter, /spokenLine\.find\(cleaned\)/);
   assert.match(formatter, /Sanitize first/);
 });
+
+test('forget-all clears both memory domains without re-saving its confirmation', () => {
+  const activity = read('app/src/main/java/ai/xyaa/assistant/MainActivity.kt');
+  assert.match(activity, /val clearAll = Regex/);
+  assert.match(activity, /conversationMemory\.clear\(\)/);
+  assert.match(activity, /recentMemory\.value = emptyList\(\)/);
+  assert.match(activity, /if \(!clearAll\) rememberForRequest\("assistant", message\)/);
+});
