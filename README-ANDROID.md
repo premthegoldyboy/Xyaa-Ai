@@ -25,13 +25,13 @@ Native Kotlin + Jetpack Compose assistant.
 
 The seven upgrades are being developed as a coordinated roadmap. Current branch foundations:
 
-- **Conversation memory:** bounded, on-device recent-turn storage (24 turns; 1,800 characters per turn) with an explicit clear API. API keys are not stored in this memory store.
+- **Conversation memory:** bounded, on-device recent-turn storage (up to 120 turns; 1,800 characters per turn) with an explicit clear API. API keys are not stored in this memory store.
 - **Agent coordination:** deterministic specialist router interface. Specialists must be injected by app code; it does not claim independent agents or external execution.
 - **Voice performance:** timing counters for first-audio readiness and accumulated inter-chunk playback gaps. Device profiling is still required.
-- **Wake word:** not yet enabled. A production implementation must use an explicit opt-in, visible microphone foreground service, and a tested on-device wake-word model.
+- **Wake word:** implemented as an explicit opt-in foreground microphone service with a visible notification and local sherpa-onnx keyword spotting. The model downloads on first use; physical-device accuracy, battery use and OEM background behavior still need testing.
 - **Android integrations:** existing intent-based skills remain the supported integration surface; broader integrations need per-feature permissions and user confirmation.
-- **Background tasks:** not yet enabled. Scheduling must use Android-supported background APIs and visible notifications, with user-controlled cancellation.
-- **Real-time voice:** current speech-recognition intent + streamed text-to-speech is not full-duplex audio. A true live session needs a streaming audio transport and lifecycle handling.
+- **Background tasks:** WorkManager-backed one-time reminders are implemented with a visible notification and notification-permission checks. A broader task scheduler and reminder-management/cancellation UI are not yet implemented.
+- **Real-time voice:** Gemini Live uses a WebSocket audio session with microphone PCM streaming and streamed response audio. It requires a Gemini key, microphone permission and network access; device lifecycle, interruption and provider-model compatibility still need physical-device testing. The separate speech-recognition + TTS path remains available for ordinary voice input.
 
 These items are intentionally marked by implementation status rather than presented as completed capabilities. Build and device validation are required before release.
 
