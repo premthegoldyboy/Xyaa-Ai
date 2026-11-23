@@ -780,7 +780,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 if (pdfRequest && response.isNotBlank()) {
                     pdfDraft = response
                     answer("Your PDF is ready. Choose a location to save it.", true)
-                    openPdfPicker()
+                    openPdfPicker(requestId)
                     sayForRequest("Your PDF is ready. Choose a location to save it.")
                 } else {
                     // Text streams during generation. Keep the completed answer visible while audio plays.
