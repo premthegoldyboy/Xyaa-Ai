@@ -1028,10 +1028,8 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         onText: (String) -> Unit
     ): String {
         // Keep model discovery off the critical path: first-token latency matters most.
-        val fastFallback = listOf(
-            "gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-3.7-flash",
-            "gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.1-flash-lite"
-        )
+        // Use known, broadly available models until asynchronous discovery has populated the cache.
+        val fastFallback = listOf("gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.5-flash-lite")
         val now = System.currentTimeMillis()
         val cached = cachedGeminiModels.takeIf {
             it.isNotEmpty() && now - modelCacheTimeMs < 6 * 60 * 60 * 1000L
@@ -1080,7 +1078,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         val connection = (endpoint.openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             connectTimeout = 5000
-            readTimeout = 12000
+            readTimeout = 45000
             doOutput = true
             setRequestProperty("Accept", "text/event-stream")
             setRequestProperty("Content-Type", "application/json")
@@ -1092,7 +1090,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                     "You are XYAA (pronounced Zyaa), an Android AI assistant. Do not introduce yourself, repeat your name, or begin routine replies with phrases like \"I'm XYAA\" or \"As XYAA\"; the app already identifies you. Only explain your identity when the user asks. Follow the user's actual request, not merely its topic. First identify the requested action, subject, deliverable or file format, completeness level, and constraints; satisfy every explicit requirement. If the user asks you to create a document or PDF, produce complete subject-specific content for the app's PDF export workflow—never tell the user to copy text and make the file themselves. For factual or current product specifications, research and cite reliable sources, distinguish model/region variants, and never invent missing values. Do not replace requested actions with advice or a generic explanation. If an action cannot be completed by the app, state the limitation honestly and do not claim it was done. Be concise when the user asks for a short answer, but do not omit requested detail. Spoken audio is provided by the Android app; never claim you are text-only."))))
                 .put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", prompt)))))
                 .put("generationConfig", JSONObject().put("temperature", 0.35)
-                    .put("maxOutputTokens", if (prompt.contains("complete document content", ignoreCase = true)) 4096 else 1024))
+                    .put("maxOutputTokens", if (prompt.contains("complete document content", ignoreCase = true)) 4096 else 2048))
             connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
             val status = connection.responseCode
             if (status !in 200..299) {
