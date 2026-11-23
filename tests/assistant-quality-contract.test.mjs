@@ -128,3 +128,13 @@ test('timer duration math cannot overflow and 12-hour alarms validate AM/PM hour
   assert.match(skills, /seconds !in 1L\.\.86400L/);
   assert.match(skills, /suffix\.isNotBlank\(\) && hour !in 1\.\.12/);
 });
+
+
+test('explicit camera, settings, calendar, and website intents precede generic app launching', () => {
+  const skills = read('app/src/main/java/ai/xyaa/assistant/SkillEngine.kt');
+  const genericOpen = skills.indexOf('val open = Regex("^(?:please )?(?:open|launch|start)');
+  for (const route of ['open camera', 'open calendar', 'open settings', 'open website ']) {
+    assert.ok(skills.indexOf(route) >= 0, 'missing explicit route: ' + route);
+    assert.ok(skills.indexOf(route) < genericOpen, 'generic launcher steals route: ' + route);
+  }
+});
