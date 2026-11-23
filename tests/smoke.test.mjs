@@ -269,3 +269,10 @@ test('Code Studio worker never reads symlinked source, leaks API keys in URLs, o
   assert.match(worker, /mode != "100644"/);
   assert.match(worker, /non-regular file mode/);
 });
+
+test('legacy browser PWA cancels speech that exceeds its timeout and clears external window opener', () => {
+  const pwa = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  assert.match(pwa, /timeoutId=setTimeout\(\(\)=>\{try\{window\.speechSynthesis\.cancel\(\)\}/);
+  assert.match(pwa, /clearTimeout\(timeoutId\)/);
+  assert.match(pwa, /if\(w\)w\.opener=null/);
+});
