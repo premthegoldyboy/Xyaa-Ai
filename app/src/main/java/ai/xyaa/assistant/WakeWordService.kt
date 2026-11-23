@@ -205,7 +205,7 @@ class WakeWordService : Service() {
     }
 
     private fun createChannel() {
-        if (Build.VERSION.SDK_INT >= 26) {
+        {
             val manager = getSystemService(NotificationManager::class.java)
             manager.createNotificationChannel(NotificationChannel(CHANNEL, "XYAA wake word", NotificationManager.IMPORTANCE_LOW))
             manager.createNotificationChannel(NotificationChannel(ALERT_CHANNEL, "XYAA wake word alerts", NotificationManager.IMPORTANCE_HIGH))
