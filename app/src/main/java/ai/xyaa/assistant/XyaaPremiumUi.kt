@@ -1028,7 +1028,7 @@ private fun MemoryPage(
                                 Text(item.category.uppercase(),color=Cyan,fontSize=8.sp,fontWeight=FontWeight.Bold)
                                 Text(item.content,color=White,fontSize=11.sp,lineHeight=15.sp)
                             }
-                            IconButton(onClick={editingItem=item;editContent=item.content}) {
+                            IconButton(onClick={editingItem=item;editContent=item.content}, enabled=!paused) {
                                 Icon(Icons.Default.Edit,"Edit saved memory",tint=Cyan)
                             }
                             IconButton(onClick={deletePersonal(item.id)}) {
@@ -1079,7 +1079,7 @@ private fun MemoryPage(
             title={Text("Edit saved memory",color=White)},
             text={OutlinedTextField(value=editContent,onValueChange={editContent=it.take(500)},
                 modifier=Modifier.fillMaxWidth(),minLines=2,maxLines=4,colors=fieldColors())},
-            confirmButton={TextButton(onClick={editPersonal(item.id,editContent);editingItem=null}) { Text("Save changes",color=Cyan) }},
+            confirmButton={TextButton(onClick={editPersonal(item.id,editContent);editingItem=null}, enabled=!paused) { Text("Save changes",color=Cyan) }},
             dismissButton={TextButton(onClick={editingItem=null}) { Text("Cancel",color=Muted) }}
         )
     }
