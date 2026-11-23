@@ -48,3 +48,12 @@ These items are intentionally marked by implementation status rather than presen
 - The report writer is grounded only in retrieved source extracts, includes source URLs, and treats webpage instructions as untrusted content.
 - The key is sent to Firecrawl over HTTPS from the device when a research request runs. This is suitable for personal testing; a distributed production release should route provider calls through an authenticated backend so a user-managed key is not exposed to app instrumentation.
 - Firecrawl usage may consume account credits. Review current usage and pricing in your Firecrawl account before enabling it.
+
+
+## Assistant response quality and recent-trends research
+- Gemini streaming ignores response parts explicitly marked as internal thoughts. The chat renders user-facing text as it arrives instead of waiting for generation to finish.
+- Groq and DeepSeek fallback requests use streamed assistant-content deltas too; hidden reasoning/protocol wrappers are filtered before display.
+- Natural command prefixes such as "please", "can you", and "could you" are normalized before local skill matching. Calls open the dialler or contacts for user confirmation; XYAA never places a call automatically.
+- Recent-trends prompts mentioning the last 30 days use date-constrained search where supported, deduplicate sources, rank by topic relevance and freshness, and use public engagement only when the provider actually supplies it. Undated evidence is labelled as undated; stale dated sources are excluded from this mode.
+- This is a safe methodology adaptation of the MIT-licensed [last30days-skill](https://github.com/mvanhorn/last30days-skill), not a bundled copy of its CLI engine. XYAA currently uses its configured Firecrawl, Tavily, and Gemini web-search providers; it does not claim full social-platform coverage. Gambling-related sources are excluded.
+- Automated regression tests cover thought filtering, streaming contracts, recent-trends routing, and natural command normalization. A successful CI build is not a substitute for device testing across Android versions and providers.
