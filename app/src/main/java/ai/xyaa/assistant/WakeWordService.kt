@@ -111,6 +111,9 @@ class WakeWordService : Service() {
             sendState(true)
             val minBytes = AudioRecord.getMinBufferSize(16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
             check(minBytes > 0) { "Microphone is unavailable." }
+            check(androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                "Microphone permission is required to run the wake word service."
+            }
             val audio = AudioRecord(
                 MediaRecorder.AudioSource.VOICE_RECOGNITION, 16000,
                 AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT,
