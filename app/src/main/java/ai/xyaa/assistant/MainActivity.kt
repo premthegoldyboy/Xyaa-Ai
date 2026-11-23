@@ -930,7 +930,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             if (documentSubject.isNotBlank()) return documentSubject
         }
         val researchStart = Regex(
-            "(?i)\\b(?:research|investigate|find out about|look up information about)\\b\\s*(?:about\\s+|on\\s+)?"
+            "(?i)\\b(?:research|investigate|find out about|look up information about|(?:show|find|summarize) (?:me )?trends? (?:about|in|on)|what(?:'s| is) trending (?:in|on|about)|what are the trends (?:in|on|about))\\b\\s*(?:about\\s+|on\\s+|in\\s+)?"
         ).find(prompt)
         var topic = if (researchStart != null) prompt.substring(researchStart.range.last + 1).trim()
         else prompt.trim()
