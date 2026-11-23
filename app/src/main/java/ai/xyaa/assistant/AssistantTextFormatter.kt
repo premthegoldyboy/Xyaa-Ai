@@ -22,6 +22,25 @@ internal object AssistantTextFormatter {
             .trim()
     }
 
+    /** Streaming-safe variant: never expose a hidden block before its closing marker arrives. */
+    fun forStreamingDisplay(raw: String): String {
+        var safe = raw
+        val blockMarkers = listOf(
+            Regex("(?i)<(?:think|analysis|reasoning|tool_call|function_call|internal_monologue)>") to
+                Regex("(?i)</(?:think|analysis|reasoning|tool_call|function_call|internal_monologue)>"),
+            Regex("<\\|(?:analysis|thinking|reasoning|tool_call|function_call|tool_code)\\|>") to
+                Regex("<\\|(?:end|fim_suffix)\\|>"),
+            Regex("\\[\\[(?:analysis|thinking|reasoning|tool_call)\\]\\]") to
+                Regex("\\[\\[end\\]\\]")
+        )
+        blockMarkers.forEach { (openPattern, closePattern) ->
+            val lastOpen = openPattern.findAll(safe).lastOrNull()?.range?.first ?: return@forEach
+            val lastClose = closePattern.findAll(safe).lastOrNull()?.range?.first ?: -1
+            if (lastOpen > lastClose) safe = safe.substring(0, lastOpen)
+        }
+        return forRichDisplay(safe)
+    }
+
     fun forDisplay(raw: String): String {
         if (raw.isBlank()) return ""
         return raw
