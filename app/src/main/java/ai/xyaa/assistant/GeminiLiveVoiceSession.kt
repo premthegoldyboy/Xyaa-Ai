@@ -107,7 +107,7 @@ class GeminiLiveVoiceSession(
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                onStatus("Live voice connection failed: ${t.message ?: "network error"}")
+                if (!stopped.get()) onStatus("Live voice connection failed: ${t.message ?: "network error"}")
                 finish()
             }
 
@@ -119,6 +119,7 @@ class GeminiLiveVoiceSession(
     }
 
     private fun handleServerMessage(raw: String) {
+        if (stopped.get()) return
         val root = runCatching { JSONObject(raw) }.getOrNull() ?: return
         root.optJSONObject("error")?.let { error ->
             onStatus("Gemini Live error: ${error.optString("message", "request rejected")}")
