@@ -188,3 +188,10 @@ test('Gemini model cache is isolated when the user changes API keys', () => {
   assert.match(activity, /modelKeyFingerprint\(apiKey\)/);
   assert.match(activity, /MessageDigest\.getInstance\("SHA-256"\)/);
 });
+
+test('research blocks a broader set of gambling-related topics and sources', () => {
+  const research = read('app/src/main/java/ai/xyaa/assistant/ResearchEngine.kt');
+  for (const term of ['betting', 'sportsbooks?', 'bookmakers?', 'parlays?', 'odds', 'wagers?']) {
+    assert.ok(research.includes(term), 'missing gambling exclusion: ' + term);
+  }
+});
