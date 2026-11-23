@@ -40,3 +40,11 @@ These items are intentionally marked by implementation status rather than presen
 - **Personal Memory:** explicit user-directed facts are stored separately from recent chat turns, encrypted with Android Keystore AES-GCM, and can be paused or deleted from the Memory screen. Local-only; no cloud sync.
 - **Code Studio:** encrypted task inbox captures development requests. Remote code execution and cloud builds are not connected yet; the app clearly reports this rather than claiming tasks have run.
 - These tracks are developed independently and integrated through shared context and approval boundaries.
+
+
+## Optional Firecrawl web research
+- Add your own Firecrawl API key in Settings → AI Providers. XYAA stores it with Android Keystore-backed AES-GCM encryption.
+- When configured, Firecrawl Search runs before Gemini Search and returns search results with cleaned page Markdown; Gemini Search and Tavily remain fallbacks.
+- The report writer is grounded only in retrieved source extracts, includes source URLs, and treats webpage instructions as untrusted content.
+- The key is sent to Firecrawl over HTTPS from the device when a research request runs. This is suitable for personal testing; a distributed production release should route provider calls through an authenticated backend so a user-managed key is not exposed to app instrumentation.
+- Firecrawl usage may consume account credits. Review current usage and pricing in your Firecrawl account before enabling it.

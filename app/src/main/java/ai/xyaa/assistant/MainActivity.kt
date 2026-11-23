@@ -110,10 +110,14 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 voiceInputStatus = voiceInputStatus.value,
                 onSaveKey = { key -> SecureKeyStore(this).save(key) },
                 onLoadKey = { SecureKeyStore(this).read() },
-                onSaveProviderKeys = { groq, deepSeek, tavily ->
-                    ProviderKeyStore(this).apply { save("groq", groq); save("deepseek", deepSeek); save("tavily", tavily) }
+                onSaveProviderKeys = { groq, deepSeek, tavily, firecrawl ->
+                    ProviderKeyStore(this).apply {
+                        save("groq", groq); save("deepseek", deepSeek); save("tavily", tavily); save("firecrawl", firecrawl)
+                    }
                 },
-                onLoadProviderKeys = { ProviderKeyStore(this).let { listOf(it.read("groq").orEmpty(), it.read("deepseek").orEmpty(), it.read("tavily").orEmpty()) } },
+                onLoadProviderKeys = { ProviderKeyStore(this).let {
+                    listOf(it.read("groq").orEmpty(), it.read("deepseek").orEmpty(), it.read("tavily").orEmpty(), it.read("firecrawl").orEmpty())
+                } },
                 neuralVoiceStatus = neuralVoiceStatus.value,
                 onDownloadNeuralVoice = { neuralVoice.downloadAndInitialize() },
                 onClearMemory = { conversationMemory.clear(); recentMemory.value = emptyList() },
@@ -654,6 +658,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         val groqKey = providerKeys.read("groq")
         val deepSeekKey = providerKeys.read("deepseek")
         val tavilyKey = providerKeys.read("tavily")
+        val firecrawlKey = providerKeys.read("firecrawl")
         if (key.isNullOrBlank() && groqKey.isNullOrBlank() && deepSeekKey.isNullOrBlank()) {
             val message = "I can handle built-in skills offline. Add a Gemini, Groq, or DeepSeek API key in Settings to enable AI conversations."
             rememberTurn("assistant", message)
@@ -675,7 +680,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             if (researchRequest) {
                 val topic = extractResearchTopic(prompt, pdfRequest)
                 val report = runCatching {
-                    ResearchEngine(key, tavilyKey, groqKey, deepSeekKey).research(topic) { _ ->
+                    ResearchEngine(key, tavilyKey, groqKey, deepSeekKey, firecrawlKey).research(topic) { _ ->
                         runOnUiThread { answer("Thinking…", false) }
                     }
                 }

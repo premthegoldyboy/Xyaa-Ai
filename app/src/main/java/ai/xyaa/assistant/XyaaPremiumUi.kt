@@ -110,7 +110,7 @@ internal fun XyaaPremiumApp(
     voiceInputStatus: String,
     onSaveKey: (String) -> Unit,
     onLoadKey: () -> String?,
-    onSaveProviderKeys: (String, String, String) -> Unit,
+    onSaveProviderKeys: (String, String, String, String) -> Unit,
     onLoadProviderKeys: () -> List<String>,
     neuralVoiceStatus: String,
     onDownloadNeuralVoice: () -> Unit,
@@ -149,6 +149,7 @@ internal fun XyaaPremiumApp(
     var groqKey by remember { mutableStateOf("") }
     var deepSeekKey by remember { mutableStateOf("") }
     var tavilyKey by remember { mutableStateOf("") }
+    var firecrawlKey by remember { mutableStateOf("") }
     var memoryQuery by remember { mutableStateOf("") }
     var confirmClear by remember { mutableStateOf(false) }
 
@@ -232,12 +233,13 @@ internal fun XyaaPremiumApp(
                             groqKey = keys.getOrNull(0).orEmpty()
                             deepSeekKey = keys.getOrNull(1).orEmpty()
                             tavilyKey = keys.getOrNull(2).orEmpty()
+                            firecrawlKey = keys.getOrNull(3).orEmpty()
                         }
                         SettingsPage(apiKey, { apiKey = it }, groqKey, { groqKey = it },
                             deepSeekKey, { deepSeekKey = it }, tavilyKey, { tavilyKey = it },
-                            neuralVoiceStatus, onDownloadNeuralVoice, wakeWordEnabled,
+                            firecrawlKey, { firecrawlKey = it }, neuralVoiceStatus, onDownloadNeuralVoice, wakeWordEnabled,
                             onStartWakeWord, onStopWakeWord,
-                            { onSaveKey(apiKey.trim()); onSaveProviderKeys(groqKey.trim(), deepSeekKey.trim(), tavilyKey.trim()) },
+                            { onSaveKey(apiKey.trim()); onSaveProviderKeys(groqKey.trim(), deepSeekKey.trim(), tavilyKey.trim(), firecrawlKey.trim()) },
                             { confirmClear = true })
                     }
                 }
@@ -1087,7 +1089,7 @@ private fun MemoryPage(
 private fun SettingsPage(
     gemini: String, setGemini: (String)->Unit, groq: String, setGroq: (String)->Unit,
     deep: String, setDeep: (String)->Unit, tavily: String, setTavily: (String)->Unit,
-    voiceStatus: String, downloadVoice: ()->Unit, wake: Boolean, startWake: ()->Unit, stopWake: ()->Unit,
+    firecrawl: String, setFirecrawl: (String)->Unit, voiceStatus: String, downloadVoice: ()->Unit, wake: Boolean, startWake: ()->Unit, stopWake: ()->Unit,
     save: ()->Unit, clear: ()->Unit
 ) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal=18.dp)) {
@@ -1096,7 +1098,9 @@ private fun SettingsPage(
         KeyField("Gemini · Primary AI",gemini,setGemini,"Required for Gemini chat and Live voice")
         KeyField("Groq · Backup AI",groq,setGroq,"Optional fallback provider")
         KeyField("DeepSeek · Backup AI",deep,setDeep,"Optional fallback provider")
-        KeyField("Tavily · Web research",tavily,setTavily,"Optional research search provider")
+        KeyField("Firecrawl · Web research",firecrawl,setFirecrawl,"Optional · searches the web and extracts clean page content")
+        KeyField("Tavily · Web research fallback",tavily,setTavily,"Optional independent search fallback")
+        Text("Firecrawl runs before Gemini Search when configured. Its key is encrypted locally and sent to Firecrawl over HTTPS only for research requests. For a shared production app, use a server-side proxy instead of distributing a provider key.", color=Muted, fontSize=10.sp, lineHeight=14.sp)
         Button(onClick=save,modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=Violet)) {
             Icon(Icons.Default.Lock,null); Spacer(Modifier.width(8.dp)); Text("Save encrypted provider keys")
         }

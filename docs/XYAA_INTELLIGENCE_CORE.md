@@ -126,3 +126,12 @@ Shared integration happens continuously through versioned interfaces and contrac
 - It explicitly reports that the isolated cloud coding/build runner is not connected. It does not pretend a task was executed and does not execute code on-device.
 - Remaining critical work: authenticated GitHub App/OAuth integration, deployable orchestrator, ephemeral isolated workers, repository checkout/patch workflow, allowlisted tests/build, artifact delivery, and end-to-end approval controls.
 - Code Studio task capture can progress independently from Personal Memory. Remote execution is a separate integration milestone, not yet available in the app.
+
+
+## Optional Firecrawl research provider — 2026-11-23
+- Added Firecrawl v2 Search as an optional first-choice provider when a Firecrawl key is configured.
+- Uses one Search request with a six-result cap and Markdown extraction (scrapeOptions) so result discovery and page extraction are combined.
+- Keeps Gemini Search and Tavily as fallbacks; the AI report writer remains Gemini/Groq/DeepSeek.
+- Source URLs are validated and deduplicated; extracted page text is bounded before report synthesis. Retrieved page content is explicitly treated as untrusted data, never as instructions.
+- The API key is stored using the existing Android Keystore-backed provider key store. In this personal-build increment, the device calls Firecrawl over HTTPS directly; a public production deployment should move provider credentials and requests behind an authenticated backend proxy.
+- Live Firecrawl API execution requires the user to add a valid key in Settings. Automated tests verify request construction and privacy wiring; they do not verify account billing, quota, or a live provider response.
