@@ -1,6 +1,7 @@
 package ai.xyaa.assistant
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -16,15 +17,14 @@ import androidx.work.WorkerParameters
 
 /** Delivers a user-requested reminder as a normal Android notification. */
 class ReminderWorker(context: Context, params: WorkerParameters) : Worker(context, params) {
+    @SuppressLint("MissingPermission")
     override fun doWork(): Result {
         val title = inputData.getString(KEY_TITLE)?.take(120)?.ifBlank { null } ?: "XYAA reminder"
         val detail = inputData.getString(KEY_DETAIL)?.take(500)?.ifBlank { null } ?: "You asked me to remind you."
         val manager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            manager.createNotificationChannel(
-                NotificationChannel(CHANNEL_ID, "XYAA reminders", NotificationManager.IMPORTANCE_DEFAULT)
-            )
-        }
+        manager.createNotificationChannel(
+            NotificationChannel(CHANNEL_ID, "XYAA reminders", NotificationManager.IMPORTANCE_DEFAULT)
+        )
         if (!NotificationManagerCompat.from(applicationContext).areNotificationsEnabled()) return Result.success()
         if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(applicationContext, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return Result.success()
         val openApp = Intent(applicationContext, MainActivity::class.java).apply {
@@ -44,10 +44,15 @@ class ReminderWorker(context: Context, params: WorkerParameters) : Worker(contex
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .build()
-        return runCatching {
+        return try {
             NotificationManagerCompat.from(applicationContext).notify(notificationId, notification)
             Result.success()
-        }.getOrElse { Result.retry() }
+        } catch (_: SecurityException) {
+            // Permission can be revoked after scheduling; do not retry a notification the user cannot receive.
+            Result.success()
+        } catch (_: Exception) {
+            Result.retry()
+        }
     }
 
     companion object {
