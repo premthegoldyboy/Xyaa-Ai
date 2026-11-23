@@ -1163,6 +1163,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             return
         }
         if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+            pendingVoiceRecognition = null
             voiceInputStatus.value = "Speech recognition isn't available. Install or enable a speech recognition service in Android settings."
             return
         }
@@ -1187,6 +1188,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                     runOnUiThread {
                         speechRecognizer?.destroy()
                         speechRecognizer = null
+                        pendingVoiceRecognition = null
                         voiceInputStatus.value = when (error) {
                             SpeechRecognizer.ERROR_AUDIO -> "Microphone audio error. Check microphone access and try again."
                             SpeechRecognizer.ERROR_CLIENT -> "Voice input was interrupted. Tap the mic and try again."
@@ -1245,7 +1247,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == 43) {
             if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) startVoiceInput()
-            else voiceInputStatus.value = "Microphone permission was denied. Allow it in Android app settings to use voice input."
+            else { pendingVoiceRecognition = null; voiceInputStatus.value = "Microphone permission was denied. Allow it in Android app settings to use voice input." }
         }
         if (requestCode == 47 && grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) startLiveVoice()
         if (requestCode == 46) {
