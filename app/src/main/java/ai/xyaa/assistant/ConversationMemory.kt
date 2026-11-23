@@ -71,7 +71,7 @@ class ConversationMemory(context: Context) {
             val item = json.optJSONObject(index) ?: return@mapNotNull null
             val role = item.optString("role")
             val text = item.optString("text")
-            if (role !in setOf("user", "assistant") || text.isBlank()) null
+            if (role !in setOf("user", "assistant") || text.isBlank() || containsCredentialLikeData(text)) null
             else Turn(role, text.take(maxCharsPerMessage), item.optLong("timestamp"))
         }.takeLast(maxTurns)
     }
