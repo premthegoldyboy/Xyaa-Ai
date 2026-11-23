@@ -22,24 +22,28 @@ internal object AssistantTextFormatter {
             .trim()
     }
 
-    /** Streaming-safe variant: never expose a hidden block before its closing marker arrives. */
-    fun forStreamingDisplay(raw: String): String {
+    private val streamingBlockMarkers = listOf(
+        Regex("(?i)<(?:think|analysis|reasoning|tool_call|function_call|internal_monologue)>") to
+            Regex("(?i)</(?:think|analysis|reasoning|tool_call|function_call|internal_monologue)>"),
+        Regex("<\\|(?:analysis|thinking|reasoning|tool_call|function_call|tool_code)\\|>") to
+            Regex("<\\|(?:end|fim_suffix)\\|>"),
+        Regex("\\[\\[(?:analysis|thinking|reasoning|tool_call)\\]\\]") to
+            Regex("\\[\\[end\\]\\]")
+    )
+
+    /** Removes complete hidden blocks and truncates any unfinished block without formatting the remaining text. */
+    private fun stripHiddenBlocks(raw: String): String {
         var safe = raw
-        val blockMarkers = listOf(
-            Regex("(?i)<(?:think|analysis|reasoning|tool_call|function_call|internal_monologue)>") to
-                Regex("(?i)</(?:think|analysis|reasoning|tool_call|function_call|internal_monologue)>"),
-            Regex("<\\|(?:analysis|thinking|reasoning|tool_call|function_call|tool_code)\\|>") to
-                Regex("<\\|(?:end|fim_suffix)\\|>"),
-            Regex("\\[\\[(?:analysis|thinking|reasoning|tool_call)\\]\\]") to
-                Regex("\\[\\[end\\]\\]")
-        )
-        blockMarkers.forEach { (openPattern, closePattern) ->
+        streamingBlockMarkers.forEach { (openPattern, closePattern) ->
             val lastOpen = openPattern.findAll(safe).lastOrNull()?.range?.first ?: return@forEach
             val lastClose = closePattern.findAll(safe).lastOrNull()?.range?.first ?: -1
             if (lastOpen > lastClose) safe = safe.substring(0, lastOpen)
         }
-        return forRichDisplay(safe)
+        return safe.replace(hiddenBlocks, "")
     }
+
+    /** Streaming-safe variant: never expose a hidden block before its closing marker arrives. */
+    fun forStreamingDisplay(raw: String): String = forRichDisplay(stripHiddenBlocks(raw))
 
     fun forDisplay(raw: String): String {
         if (raw.isBlank()) return ""
@@ -204,10 +208,10 @@ internal object AssistantTextFormatter {
     /** A compact, faithful memory entry; spoken summaries take priority for long reports. */
     fun forMemory(raw: String): String {
         if (raw.isBlank()) return ""
-        // Sanitize first: a SPOKEN label inside an internal block must never be stored as a memory turn.
-        val cleaned = forDisplay(raw)
-        val spoken = spokenLine.find(cleaned)?.groupValues?.getOrNull(1)?.trim().orEmpty()
-        val source = if (spoken.isNotBlank()) spoken else cleaned.substringBefore("\n\n")
+        // Strip hidden blocks before extracting SPOKEN, but preserve the label for summary selection.
+        val safe = stripHiddenBlocks(raw)
+        val spoken = spokenLine.find(safe)?.groupValues?.getOrNull(1)?.trim().orEmpty()
+        val source = if (spoken.isNotBlank()) spoken else forDisplay(safe).substringBefore("\n\n")
         return compact(source, 520)
     }
 
