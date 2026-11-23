@@ -164,6 +164,7 @@ test('Code Studio captures encrypted development tasks without executing code on
   assert.match(store, /fun setPlanning\(/);
   assert.match(store, /copy\(plan = "", approved = false, status = "Planning…"/);
   assert.match(store, /fun setPlanningFailed\(/);
+  assert.match(store, /expectedRequest != null && tasks\[index\]\.request != expectedRequest/);
   assert.match(store, /approved: Boolean = false/);
   assert.match(store, /expectedRequest != null && tasks\[index\]\.request != expectedRequest/);
   assert.match(store, /request = cleaned, plan = "", approved = false/);
