@@ -181,3 +181,10 @@ test('Gemini model discovery never caches guessed IDs when the API discovery req
   assert.match(activity, /fastFallback = listOf\("gemini-2\.5-flash"/);
   assert.doesNotMatch(activity, /if \(discovered\.isNotEmpty\(\)\) discovered\.toSet\(\) else preferred\.toSet\(\)/);
 });
+
+test('Gemini model cache is isolated when the user changes API keys', () => {
+  const activity = read('app/src/main/java/ai/xyaa/assistant/MainActivity.kt');
+  assert.match(activity, /modelCacheKeyFingerprint/);
+  assert.match(activity, /modelKeyFingerprint\(apiKey\)/);
+  assert.match(activity, /MessageDigest\.getInstance\("SHA-256"\)/);
+});
