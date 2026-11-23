@@ -146,3 +146,24 @@ test('stale async requests cannot speak over newer replies or complete an old PD
   assert.match(activity, /ownerRequest == requestSequence\.get\(\)/);
   assert.match(activity, /openPdfPicker\(requestId\)/);
 });
+
+test('planned destructive note and PDF operations must target content named by the user', () => {
+  const management = read('app/src/main/java/ai/xyaa/assistant/ManagementAgent.kt');
+  assert.match(management, /explicitNoteNumber/);
+  assert.match(management, /number == explicitNoteNumber/);
+  assert.match(management, /original\.contains\(query\.lowercase\(Locale\.ROOT\)\)/);
+  assert.match(management, /matches\.size == 1/);
+  assert.match(management, /original\.contains\(normalizedNewName\)/);
+});
+
+test('model archive downloads and extraction are bounded against oversized payloads', () => {
+  const neural = read('app/src/main/java/ai/xyaa/assistant/NeuralVoiceEngine.kt');
+  const wake = read('app/src/main/java/ai/xyaa/assistant/WakeWordService.kt');
+  assert.match(neural, /MAX_ARCHIVE_BYTES/);
+  assert.match(neural, /MAX_EXTRACTED_BYTES/);
+  assert.match(neural, /MAX_ARCHIVE_ENTRIES/);
+  assert.match(wake, /MAX_ARCHIVE_BYTES/);
+  assert.match(wake, /MAX_EXTRACTED_BYTES/);
+  assert.match(wake, /MAX_ARCHIVE_ENTRIES/);
+  assert.match(wake, /return START_NOT_STICKY/);
+});
