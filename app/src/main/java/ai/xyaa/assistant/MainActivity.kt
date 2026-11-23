@@ -600,7 +600,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 "Cleared $removed personal memory item(s) and $clearedConversationTurns recent conversation turn(s)."
             } else if (removed > 0) "Forgot $removed saved personal memory item(s)."
             else "I couldn't find a saved personal memory matching that request."
-            rememberForRequest("assistant", message)
+            if (!clearAll) rememberForRequest("assistant", message)
             runOnUiThread { answer(message, true); sayForRequest(message) }
             return
         }
