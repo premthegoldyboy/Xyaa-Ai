@@ -32,6 +32,7 @@ class ResearchEngine(
 
     fun research(topic: String, onStatus: (String) -> Unit = {}): Report {
         require(topic.isNotBlank()) { "Enter a research topic." }
+        require(!isGamblingTopic(topic)) { "XYAA can't research or locate gambling services." }
         var firecrawlFailure: Throwable? = null
         if (!firecrawlKey.isNullOrBlank()) {
             try {
@@ -317,12 +318,21 @@ $context"""
         return (kotlin.math.log10(total.toDouble() + 1.0) * 20.0).toInt().coerceIn(1, 100)
     }
 
+    private fun isGamblingTopic(topic: String): Boolean =
+        Regex("(?i)\\b(gambling|sports? betting|betting apps?|casino|wagering|prediction markets?)\\b")
+            .containsMatchIn(topic)
+
+    private fun isGamblingSource(source: Source): Boolean =
+        Regex("(?i)\\b(gambling|sports? betting|betting apps?|casino|wagering|prediction markets?)\\b")
+            .containsMatchIn(source.title + " " + source.url + " " + source.snippet)
+
     private fun rankRecentSources(topic: String, input: List<Source>): List<Source> {
-        if (!isLast30DaysRequest(topic)) return input.distinctBy { it.url }
+        val safeSources = input.filterNot(::isGamblingSource).distinctBy { it.url }
+        if (!isLast30DaysRequest(topic)) return safeSources
         val terms = Regex("[\\p{L}\\p{N}]{3,}").findAll(topic.lowercase(Locale.ROOT))
             .map { it.value }.filterNot { it in setOf("last", "past", "days", "recent", "trends", "people", "saying") }.toSet()
         val cutoff = java.time.LocalDate.now().minusDays(30)
-        return input.distinctBy { it.url }.map { source ->
+        return safeSources.map { source ->
             val haystack = (source.title + " " + source.snippet).lowercase(Locale.ROOT)
             val relevance = if (terms.isEmpty()) 50 else ((terms.count { haystack.contains(it) }.toDouble() / terms.size) * 100.0).toInt()
             val date = runCatching { java.time.LocalDate.parse(source.publishedAt.take(10)) }.getOrNull()
