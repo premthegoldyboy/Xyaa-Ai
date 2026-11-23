@@ -107,9 +107,6 @@ class SkillEngine(private val context: Context) {
             return launch(Intent(AlarmClock.ACTION_SET_ALARM).putExtra(AlarmClock.EXTRA_HOUR, hour).putExtra(AlarmClock.EXTRA_MINUTES, minute), "Opening the alarm screen.")
         }
 
-        val open = Regex("^(?:please )?(?:open|launch|start) (.+?)[.!?]?$", RegexOption.IGNORE_CASE).find(text)
-        if (open != null) return openApp(open.groupValues[1].trim().removeSurrounding("\"").removeSurrounding("'"))
-
         val search = Regex("^(?:search(?: for)?|google) (.+)$", RegexOption.IGNORE_CASE).find(text)
         if (search != null) return webSearch(search.groupValues[1])
         val youtube = Regex("^(?:play|search youtube for|find on youtube) (.+)$", RegexOption.IGNORE_CASE).find(text)
@@ -155,6 +152,8 @@ class SkillEngine(private val context: Context) {
             val url = if (host.startsWith("http")) host else "https://$host"
             return launch(Intent(Intent.ACTION_VIEW, Uri.parse(url)), "Opening website.")
         }
+        val open = Regex("^(?:please )?(?:open|launch|start) (.+?)[.!?]?$", RegexOption.IGNORE_CASE).find(text)
+        if (open != null) return openApp(open.groupValues[1].trim().removeSurrounding("\\\"").removeSurrounding("\\'"))
         return null
     }
 
