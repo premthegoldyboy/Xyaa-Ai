@@ -52,3 +52,9 @@ test('memory edit controls are disabled while personal memory is paused', () => 
   assert.match(ui, /IconButton\(onClick=\{editingItem=item;editContent=item\.content\}, enabled=!paused\)/);
   assert.match(ui, /onClick=\{editPersonal\(item\.id,editContent\);editingItem=null\}, enabled=!paused/);
 });
+
+test('memory UI discloses provider sharing of relevant local context', () => {
+  assert.match(ui, /matching saved facts and recent conversation context may be sent with your prompt/);
+  assert.match(ui, /Relevant context may be sent with your prompt to the AI provider/);
+  assert.match(ui, /no background cloud sync/);
+});
