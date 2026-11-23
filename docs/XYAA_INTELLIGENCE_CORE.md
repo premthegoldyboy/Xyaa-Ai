@@ -135,3 +135,19 @@ Shared integration happens continuously through versioned interfaces and contrac
 - Source URLs are validated and deduplicated; extracted page text is bounded before report synthesis. Retrieved page content is explicitly treated as untrusted data, never as instructions.
 - The API key is stored using the existing Android Keystore-backed provider key store. In this personal-build increment, the device calls Firecrawl over HTTPS directly; a public production deployment should move provider credentials and requests behind an authenticated backend proxy.
 - Live Firecrawl API execution requires the user to add a valid key in Settings. Automated tests verify request construction and privacy wiring; they do not verify account billing, quota, or a live provider response.
+
+
+## Recent-trends research — methodology adaptation
+- Adapted the relevance-first, recency-aware, multi-source synthesis approach from the MIT-licensed last30days-skill repository. XYAA does not bundle or execute the third-party CLI engine.
+- Recent-trends requests are routed to research and constrained to a rolling 30-day window where the configured provider supports it. Firecrawl queries include a date boundary; Tavily uses its month filter.
+- Search results are deduplicated and ranked using topic-term relevance, publication freshness, and explicitly available public engagement counts. Engagement is never fabricated. Dated sources older than the window are excluded; undated sources remain clearly labelled as undated.
+- Retrieved content remains untrusted evidence. The report writer must cite the matching source, state uncertainty, and exclude gambling-related sources.
+- Current provider coverage is public web search through Firecrawl, Tavily, and Gemini Search. This is not full coverage of every social platform supported by the upstream skill. No browser cookies, private sessions, or login credentials are harvested.
+- Regression coverage is in `tests/assistant-quality-contract.test.mjs`; live provider results still require valid user-configured API keys and device/provider testing.
+
+## Assistant output and streaming hardening
+- Gemini stream parsing discards response parts marked `thought=true` before they enter the visible transcript.
+- Gemini and OpenAI-compatible fallback providers stream assistant text into the chat. Fallback parsing reads only `delta.content`, never reasoning metadata.
+- The shared formatter strips common hidden-reasoning wrappers and internal status labels from display, speech, and memory paths.
+- The app keeps the completed answer visible while speech plays, rather than replacing the whole answer with a speech-progress transcript.
+- Command matching normalizes common polite prefixes and keeps calling behind the Android dialler/contacts confirmation surface.
