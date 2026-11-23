@@ -195,3 +195,14 @@ test('research blocks a broader set of gambling-related topics and sources', () 
     assert.ok(research.includes(term), 'missing gambling exclusion: ' + term);
   }
 });
+
+test('voice model archives are validated in staging before replacing installed models', () => {
+  const neural = read('app/src/main/java/ai/xyaa/assistant/NeuralVoiceEngine.kt');
+  const wake = read('app/src/main/java/ai/xyaa/assistant/WakeWordService.kt');
+  assert.match(neural, /MODEL_DIR, "\\$MODEL_DIR\.installing"/);
+  assert.match(neural, /hasModelFiles\(stagedModel\)/);
+  assert.match(neural, /stagedModel\.renameTo\(modelDir\)/);
+  assert.match(wake, /MODEL_NAME, "\\$MODEL_NAME\.installing"/);
+  assert.match(wake, /File\(staging, entry\.name\)/);
+  assert.match(wake, /stagedModel\.renameTo\(modelDir\)/);
+});
