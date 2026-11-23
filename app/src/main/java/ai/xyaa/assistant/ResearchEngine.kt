@@ -323,11 +323,11 @@ $context"""
     }
 
     private fun isGamblingTopic(topic: String): Boolean =
-        Regex("(?i)\\b(gambling|sports? betting|betting apps?|casino|wagering|prediction markets?)\\b")
+        Regex("(?i)\\b(gambling|betting|sports?\\s+betting|sportsbooks?|bookmakers?|parlays?|odds|wagers?|wagering|casino|prediction markets?)\\b")
             .containsMatchIn(topic)
 
     private fun isGamblingSource(source: Source): Boolean =
-        Regex("(?i)\\b(gambling|sports? betting|betting apps?|casino|wagering|prediction markets?)\\b")
+        Regex("(?i)\\b(gambling|betting|sports?\\s+betting|sportsbooks?|bookmakers?|parlays?|odds|wagers?|wagering|casino|prediction markets?)\\b")
             .containsMatchIn(source.title + " " + source.url + " " + source.snippet)
 
     private fun rankRecentSources(topic: String, input: List<Source>): List<Source> {
