@@ -47,3 +47,8 @@ test('recent conversation history does not persist credential-like user or assis
   assert.match(history, /PRIVATE KEY/);
   assert.match(history, /A-Za-z0-9_-\]\{32,\}/);
 });
+
+test('memory edit controls are disabled while personal memory is paused', () => {
+  assert.match(ui, /IconButton\(onClick=\{editingItem=item;editContent=item\.content\}, enabled=!paused\)/);
+  assert.match(ui, /onClick=\{editPersonal\(item\.id,editContent\);editingItem=null\}, enabled=!paused/);
+});
