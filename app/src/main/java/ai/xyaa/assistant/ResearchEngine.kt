@@ -92,8 +92,9 @@ For product specifications, create a readable table with one row per attribute a
             val candidate = json.optJSONArray("candidates")?.optJSONObject(0)
                 ?: throw IllegalStateException("Gemini returned no research result.")
             val parts = candidate.optJSONObject("content")?.optJSONArray("parts") ?: JSONArray()
-            val raw = (0 until parts.length()).mapNotNull { parts.optJSONObject(it)?.optString("text") }
-                .filter { it.isNotBlank() }.joinToString("\n")
+            val raw = (0 until parts.length()).mapNotNull { index ->
+                parts.optJSONObject(index)?.takeUnless { it.optBoolean("thought", false) }?.optString("text")
+            }.filter { it.isNotBlank() }.joinToString("\n")
             if (raw.isBlank()) throw IllegalStateException("Gemini returned an empty report.")
             val chunks = candidate.optJSONObject("groundingMetadata")?.optJSONArray("groundingChunks") ?: JSONArray()
             val sources = mutableListOf<Source>()
@@ -287,8 +288,9 @@ $context"""
             val json = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
             val parts = json.optJSONArray("candidates")?.optJSONObject(0)
                 ?.optJSONObject("content")?.optJSONArray("parts") ?: JSONArray()
-            return (0 until parts.length()).mapNotNull { parts.optJSONObject(it)?.optString("text") }
-                .filter { it.isNotBlank() }.joinToString("\n")
+            return (0 until parts.length()).mapNotNull { index ->
+                parts.optJSONObject(index)?.takeUnless { it.optBoolean("thought", false) }?.optString("text")
+            }.filter { it.isNotBlank() }.joinToString("\n")
                 .ifBlank { throw IllegalStateException("Gemini returned an empty report.") }
         } finally {
             connection.disconnect()
