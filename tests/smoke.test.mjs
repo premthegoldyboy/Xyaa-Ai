@@ -10,6 +10,11 @@ const sw = readFileSync(new URL('../sw.js', import.meta.url), 'utf8');
 test('app document contains the XYAA identity and required controls', () => {
   assert.match(html, /<title>XYAA<\/title>/);
   for (const id of ['chat', 'mic', 'handsfree', 'composer', 'prefs', 'apiKey']) {
+  assert.match(store, /fun update\\(id: String, content: String\\)/);
+  assert.match(store, /items\\[duplicate\\]\\.copy\\(category = updated\\.category, updatedAt = updated\\.updatedAt\\)/);
+  assert.match(store, /items\\.removeAt\\(index\\)/);
+  assert.match(store, /ranked\\.filter \\{ it\\.second > 0 \\}\\.take\\(limit\\)/);
+  assert.match(store, /selected\\.joinToString/);
     assert.match(html, new RegExp('id="' + id + '"'));
   }
   assert.doesNotMatch(html, /\b(?:Jarvis|Nova)\b/i);
