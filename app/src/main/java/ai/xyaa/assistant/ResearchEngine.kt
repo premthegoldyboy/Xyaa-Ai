@@ -76,7 +76,9 @@ class ResearchEngine(
             setRequestProperty("x-goog-api-key", geminiKey!!.trim())
         }
         try {
-            val prompt = """Today is ${java.time.LocalDate.now()}. Research this topic using Google Search grounding: "$topic".
+            val recentGuidance = if (isLast30DaysRequest(topic)) "RECENT TRENDS MODE: search only for evidence from the last 30 days using the date-bounded query. Weigh relevance and recency; include public engagement only when a source explicitly provides it. Do not invent dates or engagement. Exclude gambling-related sources." else ""
+            val prompt = """Today is ${java.time.LocalDate.now()}. Research this topic using Google Search grounding: "${searchQuery(topic)}".
+$recentGuidance
 First identify the exact product/model and market or region. Prefer official manufacturer product pages, support pages, manuals and regulatory filings; use reputable independent reviews only to fill gaps.
 Write a complete, balanced report in the user's language that fulfils the exact scope implied by the topic. Include a concise two-sentence spoken summary first, on a line beginning SPOKEN:.
 Then write Markdown with a specific title, a short executive summary, detailed subject-specific analysis, and a clear limitations section.
