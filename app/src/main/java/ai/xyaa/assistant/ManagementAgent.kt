@@ -261,7 +261,7 @@ class ManagementAgent(context: Context) {
         You are XYAA's file-and-notes management planner. Convert the user's request into exactly one JSON object.
         User request: "$userRequest"
         Allowed actions:
-        save_note {text}; list_notes {}; search_notes {query}; edit_note {number, text};
+        save_note {text}; list_notes {}; search_notes {query}; edit_note {number or query, text};
         delete_note {number or query}; clear_notes {};
         list_pdfs {}; search_pdfs {query}; open_pdf {query}; rename_pdf {query, new_name};
         delete_pdf {query}; clarify {question}.
@@ -277,25 +277,48 @@ class ManagementAgent(context: Context) {
         val text = plan.optString("text").trim()
         val number = plan.optInt("number", -1)
         val original = originalRequest.lowercase(Locale.ROOT)
+        val explicitNoteNumber = Regex("\\bnote\\s+#?(\\d+)\\b").find(original)?.groupValues?.get(1)?.toIntOrNull()
+        val queryWasNamed = query.isNotBlank() && original.contains(query.lowercase(Locale.ROOT))
         return when (action) {
             "save_note" -> if (text.isNotBlank()) execute("save note: $text") else "What should I write in the note?"
             "list_notes" -> execute("show my notes")
-            "search_notes" -> if (query.isNotBlank()) execute("search notes for $query") else "What should I search for?"
-            "edit_note" -> if (number > 0 && text.isNotBlank()) execute("edit note #$number to $text") else "Tell me which note number to edit and its replacement."
+            "search_notes" -> if (queryWasNamed) execute("search notes for $query") else "What should I search for?"
+            "edit_note" -> {
+                if (text.isBlank()) "What should the replacement note say?"
+                else if (explicitNoteNumber != null) {
+                    if (number == explicitNoteNumber) execute("edit note #$number to $text")
+                    else "I could not verify the note number from your request. Please specify the exact note number."
+                } else if (queryWasNamed) {
+                    val notes = readNotes()
+                    val matches = (0 until notes.length()).filter { notes.getJSONObject(it).optString("text").contains(query, true) }
+                    if (matches.size == 1) execute("edit note #${matches.single() + 1} to $text")
+                    else if (matches.isEmpty()) "I could not find a note matching that description."
+                    else "I found multiple matching notes. Please specify the note number so I do not edit the wrong one."
+                } else "Please identify the note by its exact number or a phrase from its contents."
+            }
             "delete_note" -> {
-                if (!Regex("\\b(delete|remove)\\b").containsMatchIn(original)) "I won't delete a note unless you explicitly ask me to."
-                else if (number > 0) execute("delete note #$number")
-                else if (query.isNotBlank()) execute("delete note about $query")
-                else "Which note should I delete?"
+                if (!Regex("\\b(delete|remove)\\b").containsMatchIn(original)) "I will not delete a note unless you explicitly ask me to."
+                else if (explicitNoteNumber != null) {
+                    if (number == explicitNoteNumber) execute("delete note #$number")
+                    else "I could not verify the note number from your request. Please specify the exact note number."
+                } else if (queryWasNamed) execute("delete note about $query")
+                else "Please identify the note by its exact number or a phrase from its contents."
             }
             "clear_notes" -> if (Regex("\\b(clear|delete|remove)\\s+(all|every)\\b").containsMatchIn(original)) execute("clear my notes")
                 else "Please explicitly say “clear all my notes” before I remove every note."
             "list_pdfs" -> execute("list my PDFs")
-            "search_pdfs" -> if (query.isNotBlank()) execute("search PDFs for $query") else "What should I search for?"
-            "open_pdf" -> if (query.isNotBlank()) execute("open PDF $query") else "Which PDF should I open?"
-            "rename_pdf" -> if (query.isNotBlank() && plan.optString("new_name").isNotBlank()) execute("rename PDF $query to ${plan.optString("new_name")}") else "Tell me the PDF and its new filename."
-            "delete_pdf" -> if (Regex("\\b(delete|remove)\\b").containsMatchIn(original) && query.isNotBlank()) execute("delete PDF $query")
-                else "I need an explicit delete request and an identifiable PDF filename."
+            "search_pdfs" -> if (queryWasNamed) execute("search PDFs for $query") else "What should I search for?"
+            "open_pdf" -> if (queryWasNamed) execute("open PDF $query") else "Please name the PDF you want to open."
+            "rename_pdf" -> {
+                val newName = plan.optString("new_name").trim()
+                val normalizedNewName = newName.removeSuffix(".pdf").lowercase(Locale.ROOT)
+                val newNameWasNamed = normalizedNewName.isNotBlank() && original.contains(normalizedNewName)
+                if (Regex("\\brename\\b").containsMatchIn(original) && queryWasNamed && newNameWasNamed)
+                    execute("rename PDF $query to $newName")
+                else "Please specify both the existing PDF filename and its new name."
+            }
+            "delete_pdf" -> if (Regex("\\b(delete|remove)\\b").containsMatchIn(original) && queryWasNamed) execute("delete PDF $query")
+                else "I need an explicit delete request and a PDF filename that appears in your request."
             "clarify" -> plan.optString("question").ifBlank { "Which note or PDF do you mean?" }
             else -> null
         }
