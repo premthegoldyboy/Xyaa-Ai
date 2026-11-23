@@ -63,7 +63,7 @@ class CodeStudioTaskStore(context: Context) {
         val tasks = readUnsafe().toMutableList()
         val index = tasks.indexOfFirst { it.id == id }
         if (index < 0) return@synchronized null
-        val updated = tasks[index].copy(status = "Planning…", updatedAt = System.currentTimeMillis())
+        val updated = tasks[index].copy(plan = "", approved = false, status = "Planning…", updatedAt = System.currentTimeMillis())
         tasks[index] = updated
         writeUnsafe(tasks)
         updated
