@@ -38,6 +38,8 @@ test('recent-trends intent routes to research and applies a 30-day relevance pip
   assert.match(research, /rankRecentSources/);
   assert.match(research, /engagementScore/);
   assert.match(research, /Exclude gambling-related sources/);
+  assert.match(research, /isGamblingTopic/);
+  assert.match(research, /isGamblingSource/);
   assert.equal(research.split('optBoolean("thought", false)').length - 1, 2);
 });
 
