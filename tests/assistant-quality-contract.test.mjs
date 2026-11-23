@@ -103,9 +103,9 @@ test('speech recognition submits the transcript through the same visible chat fl
 test('simple Google searches and weather requests stay on the built-in browser skill path', () => {
   const router = read('app/src/main/java/ai/xyaa/assistant/XYAAAgentOrchestrator.kt');
   const skills = read('app/src/main/java/ai/xyaa/assistant/SkillEngine.kt');
-  assert.doesNotMatch(router, /search\\s\+for/);
-  assert.doesNotMatch(router, /\\|news\\|weather/);
-  assert.doesNotMatch(router, /google\\\\b/);
-  assert.match(skills, /search\(\\.\*\) /);
+  assert.equal(router.includes('search\\\\s+for'), false);
+  assert.equal(router.includes('|news|weather'), false);
+  assert.equal(router.includes('google\\\\b'), false);
+  assert.match(skills, /search\\(\\?: for\\)\\?/);
   assert.match(skills, /val weather = Regex/);
 });
