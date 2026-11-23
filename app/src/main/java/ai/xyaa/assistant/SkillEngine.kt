@@ -82,15 +82,17 @@ class SkillEngine(private val context: Context) {
 
         val timer = Regex("^(?:set )?(?:a )?timer for (\\d+)\\s*(seconds?|secs?|minutes?|mins?|hours?|hrs?)$", RegexOption.IGNORE_CASE).find(text)
         if (timer != null) {
-            val amount = timer.groupValues[1].toIntOrNull() ?: return "That timer duration is too large."
+            val amount = timer.groupValues[1].toLongOrNull() ?: return "That timer duration is too large."
             val unit = timer.groupValues[2].lowercase()
-            val seconds = when {
-                unit.startsWith("hour") || unit.startsWith("hr") -> amount * 3600
-                unit.startsWith("min") -> amount * 60
-                else -> amount
+            val multiplier = when {
+                unit.startsWith("hour") || unit.startsWith("hr") -> 3600L
+                unit.startsWith("min") -> 60L
+                else -> 1L
             }
-            if (seconds !in 1..86400) return "Choose a timer between 1 second and 24 hours."
-            return launch(Intent(AlarmClock.ACTION_SET_TIMER).putExtra(AlarmClock.EXTRA_LENGTH, seconds).putExtra(AlarmClock.EXTRA_SKIP_UI, false), "Opening the timer.")
+            val seconds = runCatching { Math.multiplyExact(amount, multiplier) }.getOrNull()
+                ?: return "That timer duration is too large."
+            if (seconds !in 1L..86400L) return "Choose a timer between 1 second and 24 hours."
+            return launch(Intent(AlarmClock.ACTION_SET_TIMER).putExtra(AlarmClock.EXTRA_LENGTH, seconds.toInt()).putExtra(AlarmClock.EXTRA_SKIP_UI, false), "Opening the timer.")
         }
 
         val alarm = Regex("^(?:set )?(?:an )?alarm for (\\d{1,2})(?::(\\d{2}))?\\s*(am|pm)?$", RegexOption.IGNORE_CASE).find(text)
@@ -98,6 +100,7 @@ class SkillEngine(private val context: Context) {
             var hour = alarm.groupValues[1].toInt()
             val minute = alarm.groupValues[2].ifBlank { "0" }.toInt()
             val suffix = alarm.groupValues[3].lowercase()
+            if (suffix.isNotBlank() && hour !in 1..12) return "For AM or PM, choose an hour from 1 to 12."
             if (suffix == "pm" && hour < 12) hour += 12
             if (suffix == "am" && hour == 12) hour = 0
             if (hour !in 0..23 || minute !in 0..59) return "That alarm time doesn't look valid."
