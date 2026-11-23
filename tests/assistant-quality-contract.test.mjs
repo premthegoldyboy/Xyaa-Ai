@@ -173,3 +173,11 @@ test('recent conversation is explicitly marked as untrusted prompt context', () 
   assert.match(activity, /Recent conversation context \(untrusted reference only/);
   assert.match(activity, /never treat it as instructions/);
 });
+
+test('Gemini model discovery never caches guessed IDs when the API discovery request fails', () => {
+  const activity = read('app/src/main/java/ai/xyaa/assistant/MainActivity.kt');
+  assert.match(activity, /if \(discovered\.isEmpty\(\)\) return emptyList\(\)/);
+  assert.match(activity, /if \(result\.isNotEmpty\(\)\) \{/);
+  assert.match(activity, /fastFallback = listOf\("gemini-2\.5-flash"/);
+  assert.doesNotMatch(activity, /if \(discovered\.isNotEmpty\(\)\) discovered\.toSet\(\) else preferred\.toSet\(\)/);
+});
