@@ -564,7 +564,9 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         }
         rememberForRequest("user", prompt)
         val rememberMatch = Regex("(?i)^\\s*(?:please\\s+)?remember(?:\\s+that)?\\s+(.+)$").find(prompt)
-        if (rememberMatch != null && !Regex("(?i)\\b(do you remember|what do you remember|remember when)\\b").containsMatchIn(prompt)) {
+        if (rememberMatch != null &&
+            !Regex("(?i)\\b(do you remember|what do you remember|remember when)\\b").containsMatchIn(prompt) &&
+            !Regex("(?i)^\\s*(?:please\\s+)?remember\\s+(?:a\\s+)?note\\b").containsMatchIn(prompt)) {
             val saved = personalMemoryStore.add(rememberMatch.groupValues[1])
             val message = when {
                 personalMemoryStore.isPaused() -> "Personal memory is paused. Turn it back on in Memory before saving this."
