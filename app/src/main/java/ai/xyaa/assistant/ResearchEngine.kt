@@ -351,11 +351,17 @@ $context"""
 
     private fun splitSpoken(raw: String): Pair<String, String> {
         val match = Regex("^\\s*SPOKEN:\\s*(.+?)(?:\\r?\\n)+", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).find(raw)
-        return if (match != null) match.groupValues[1].trim() to raw.substring(match.range.last + 1).trim()
-        else "I've finished researching $topicPlaceholder.".let { it to raw.trim() }
-    }
-
-    companion object {
-        private const val topicPlaceholder = "the topic"
+        if (match != null) {
+            val summary = AssistantTextFormatter.forDisplay(match.groupValues[1]).trim()
+            val report = raw.substring(match.range.last + 1).trim()
+            if (summary.isNotBlank() && report.isNotBlank()) return summary to report
+        }
+        // Providers sometimes omit the optional SPOKEN line. Derive a short summary from the
+        // actual report instead of returning a generic placeholder or exposing the whole report.
+        val clean = AssistantTextFormatter.forDisplay(raw).replace(Regex("\\s+"), " ").trim()
+        val summary = clean.split(Regex("(?<=[.!?])\\s+"))
+            .take(2).joinToString(" ").take(420)
+            .ifBlank { "The research report is ready. Review the findings and source notes below." }
+        return summary to raw.trim()
     }
 }
