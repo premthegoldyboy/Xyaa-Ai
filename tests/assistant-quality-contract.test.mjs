@@ -66,6 +66,6 @@ test('a newer chat request owns the transcript and speech output', () => {
 
 test('remember-note commands are not misrouted into personal memory', () => {
   const activity = read('app/src/main/java/ai/xyaa/assistant/MainActivity.kt');
-  assert.match(activity, /remember\\s+\\(\?:a\\s\+\)\?note/);
+  assert.ok(activity.includes('remember\\\\s+(?:a\\\\s+)?note\\\\b'));
   assert.match(activity, /rememberMatch != null/);
 });
