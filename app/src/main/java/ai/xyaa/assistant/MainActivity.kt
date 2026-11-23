@@ -746,7 +746,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                     aiPrompt,
                     onStatus = { _ -> runOnUiThread { answer("Thinking…", false) } },
                     onText = { partial ->
-                        val visible = AssistantTextFormatter.forRichDisplay(partial)
+                        val visible = AssistantTextFormatter.forStreamingDisplay(partial)
                         if (visible.isNotBlank()) runOnUiThread { answer(visible, false) }
                     }
                 )
@@ -756,7 +756,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 ProviderFallbackClient(groqKey, deepSeekKey).complete(
                     aiPrompt,
                     onText = { partial ->
-                        val visible = AssistantTextFormatter.forRichDisplay(partial)
+                        val visible = AssistantTextFormatter.forStreamingDisplay(partial)
                         if (visible.isNotBlank()) runOnUiThread { answer(visible, false) }
                     },
                     onProvider = { _ -> runOnUiThread { answer("Thinking…", false) } }
