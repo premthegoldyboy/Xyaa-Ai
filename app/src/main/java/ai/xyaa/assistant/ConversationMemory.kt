@@ -27,7 +27,7 @@ class ConversationMemory(context: Context) {
     data class Turn(val role: String, val text: String, val timestamp: Long)
 
     fun remember(role: String, text: String) = synchronized(lock) {
-        if (role !in setOf("user", "assistant") || text.isBlank()) return@synchronized
+        if (role !in setOf("user", "assistant") || text.isBlank() || containsCredentialLikeData(text)) return@synchronized
         val turns = readUnsafe().toMutableList()
         turns.add(Turn(role, text.take(maxCharsPerMessage), System.currentTimeMillis()))
         while (turns.size > maxTurns) turns.removeAt(0)
@@ -90,6 +90,16 @@ class ConversationMemory(context: Context) {
             .apply()
     }
 
+    /** Never persist likely credentials in the recent transcript, even though it is encrypted. */
+    private fun containsCredentialLikeData(value: String): Boolean {
+        val lower = value.lowercase()
+        val labels = listOf("password", "passcode", "api key", "access token", "refresh token",
+            "bearer token", "one-time password", "secret key", "private key", "recovery code", "client secret")
+        if (labels.any(lower::contains)) return true
+        if (Regex("""\\b(?:token|secret|credential|password|passwd|api[_ -]?key)\\s*[:=]\\s*\\S+""", RegexOption.IGNORE_CASE).containsMatchIn(value)) return true
+        if (value.contains("-----BEGIN") && value.contains("PRIVATE KEY")) return true
+        return Regex("""\\b[A-Za-z0-9_-]{32,}\\b""").containsMatchIn(value)
+    }
     private fun getKey(): SecretKey {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
         (store.getKey(keyAlias, null) as? SecretKey)?.let { return it }
