@@ -91,14 +91,22 @@ class NeuralVoiceEngine(private val context: Context, private val onStatus: (Str
                 } finally { connection.disconnect() }
                 check(archive.isFile && archive.length() > 1024 * 1024) { "Voice model download was incomplete. Please retry." }
                 onStatus("Installing neural voice model… preparing archive")
-                extractSafely(archive, modelRoot) { extracted, fileName ->
+                val staging = File(modelRoot, "$MODEL_DIR.installing")
+                staging.deleteRecursively()
+                extractSafely(archive, staging) { extracted, fileName ->
                     onStatus("Installing neural voice: ${extracted / (1024 * 1024)} MB extracted · ${fileName.takeLast(42)}")
                 }
+                val stagedModel = File(staging, MODEL_DIR)
+                check(hasModelFiles(stagedModel)) { "Downloaded archive is missing required Kokoro files" }
+                modelDir.deleteRecursively()
+                check(stagedModel.renameTo(modelDir)) { "Could not finalize the downloaded Kokoro model." }
+                staging.deleteRecursively()
                 archive.delete()
-                check(hasModelFiles()) { "Downloaded archive is missing required Kokoro files" }
                 engine = createEngine()
                 onStatus(XyaaVoiceProfile.READY_STATUS)
             } catch (error: Throwable) {
+                runCatching { File(modelRoot, "$MODEL_DIR.installing").deleteRecursively() }
+                runCatching { File(modelRoot, "kokoro-model.tar.bz2.part").delete() }
                 onStatus("Neural voice setup failed: ${error.message ?: "unknown error"}. Existing system voice remains available.")
             } finally { downloading.set(false) }
         }
@@ -286,17 +294,17 @@ class NeuralVoiceEngine(private val context: Context, private val onStatus: (Str
         return chunks
     }
 
-    private fun createEngine(): OfflineTts {
-        val model = File(modelDir, "model.onnx")
-        val voices = File(modelDir, "voices.bin")
-        val tokens = File(modelDir, "tokens.txt")
-        val espeak = File(modelDir, "espeak-ng-data")
+    private fun createEngine(directory: File = modelDir): OfflineTts {
+        val model = File(directory, "model.onnx")
+        val voices = File(directory, "voices.bin")
+        val tokens = File(directory, "tokens.txt")
+        val espeak = File(directory, "espeak-ng-data")
         check(model.isFile && voices.isFile && tokens.isFile && espeak.isDirectory) { "Kokoro model files are incomplete" }
         val config = OfflineTtsConfig(model = OfflineTtsModelConfig(
             kokoro = OfflineTtsKokoroModelConfig(
                 model = model.absolutePath, voices = voices.absolutePath, tokens = tokens.absolutePath,
                 dataDir = espeak.absolutePath,
-                lexicon = "${File(modelDir, "lexicon-us-en.txt").absolutePath},${File(modelDir, "lexicon-zh.txt").absolutePath}",
+                lexicon = "${File(directory, "lexicon-us-en.txt").absolutePath},${File(directory, "lexicon-zh.txt").absolutePath}",
                 lang = "en"
             ),
             numThreads = 2, debug = false, provider = "cpu"
@@ -352,8 +360,8 @@ class NeuralVoiceEngine(private val context: Context, private val onStatus: (Str
         }
     }
 
-    private fun hasModelFiles() = File(modelDir, "model.onnx").isFile && File(modelDir, "voices.bin").isFile &&
-        File(modelDir, "tokens.txt").isFile && File(modelDir, "espeak-ng-data").isDirectory
+    private fun hasModelFiles(directory: File = modelDir) = File(directory, "model.onnx").isFile && File(directory, "voices.bin").isFile &&
+        File(directory, "tokens.txt").isFile && File(directory, "espeak-ng-data").isDirectory
 
     private fun extractSafely(
         archive: File,
