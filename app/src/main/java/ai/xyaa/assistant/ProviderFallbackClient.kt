@@ -62,9 +62,9 @@ class ProviderFallbackClient(
                 throw IllegalStateException("${provider.name} HTTP $status: ${detail.take(300)}")
             }
             val json = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
-            val content = json.optJSONArray("choices")?.optJSONObject(0)
-                ?.optJSONObject("message")?.optString("content").orEmpty().trim()
-            if (content.isBlank()) throw IllegalStateException("${provider.name} returned an empty response.")
+            val message = json.optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")
+            val content = AssistantTextFormatter.forRichDisplay(message?.optString("content").orEmpty()).trim()
+            if (content.isBlank()) throw IllegalStateException("${provider.name} returned an empty user-facing response.")
             return content
         } finally {
             connection.disconnect()
