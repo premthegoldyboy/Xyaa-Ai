@@ -41,6 +41,9 @@ class WakeWordService : Service() {
         private const val CHANNEL = "xyaa_wake_word"
         private const val ALERT_CHANNEL = "xyaa_wake_word_alerts"
         private const val ALERT_NOTIFICATION_ID = 7304
+        private const val MAX_ARCHIVE_BYTES = 256L * 1024 * 1024
+        private const val MAX_EXTRACTED_BYTES = 512L * 1024 * 1024
+        private const val MAX_ARCHIVE_ENTRIES = 10000
         private const val NOTIFICATION_ID = 7301
         private const val MODEL_NAME = "sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20"
         private const val MODEL_URL = "https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/$MODEL_NAME.tar.bz2"
@@ -181,21 +184,50 @@ class WakeWordService : Service() {
         }
         try {
             if (connection.responseCode !in 200..299) error("Model download HTTP ${connection.responseCode}")
+            require(connection.contentLengthLong <= MAX_ARCHIVE_BYTES || connection.contentLengthLong < 0L) {
+                "Wake-word model archive exceeds the 256 MB download limit."
+            }
             connection.inputStream.use { input ->
-                FileOutputStream(archive).use { output -> input.copyTo(output, 131072); output.fd.sync() }
+                FileOutputStream(archive).use { output ->
+                    val buffer = ByteArray(131072)
+                    var downloaded = 0L
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        downloaded += count
+                        require(downloaded <= MAX_ARCHIVE_BYTES) { "Wake-word model archive exceeded the 256 MB download limit." }
+                        output.write(buffer, 0, count)
+                    }
+                    output.fd.sync()
+                }
             }
         } finally { connection.disconnect() }
         check(archive.length() > 1024 * 1024) { "Wake-word model download was incomplete." }
         val canonicalRoot = root.canonicalFile.toPath()
+        var extracted = 0L
+        var entries = 0
         TarArchiveInputStream(BZip2CompressorInputStream(BufferedInputStream(archive.inputStream()))).use { tar ->
             while (true) {
                 val entry = tar.nextTarEntry ?: break
+                entries++
+                require(entries <= MAX_ARCHIVE_ENTRIES) { "Wake-word archive contains too many entries." }
+                require(!entry.isSymbolicLink && !entry.isLink) { "Links are not allowed in the wake-word archive." }
                 val target = File(root, entry.name).canonicalFile
                 require(target.toPath().startsWith(canonicalRoot)) { "Unsafe path in wake-word model archive." }
                 if (entry.isDirectory) target.mkdirs()
                 else if (entry.isFile) {
+                    require(entry.size in 0..MAX_EXTRACTED_BYTES) { "Wake-word archive entry is too large." }
                     target.parentFile?.mkdirs()
-                    FileOutputStream(target).use { tar.copyTo(it, 131072) }
+                    FileOutputStream(target).use { output ->
+                        val buffer = ByteArray(131072)
+                        while (true) {
+                            val count = tar.read(buffer)
+                            if (count < 0) break
+                            extracted += count
+                            require(extracted <= MAX_EXTRACTED_BYTES) { "Wake-word model expands beyond the 512 MB installation limit." }
+                            output.write(buffer, 0, count)
+                        }
+                    }
                 }
             }
         }
