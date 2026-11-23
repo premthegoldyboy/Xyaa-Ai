@@ -160,6 +160,11 @@ class GeminiLiveVoiceSession(
 
     private fun startMicrophone() {
         if (stopped.get() || !audioStarted.compareAndSet(false, true)) return
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            onStatus("Microphone permission was revoked. Allow it again to use live voice.")
+            stop()
+            return
+        }
         val minBytes = AudioRecord.getMinBufferSize(INPUT_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
         if (minBytes <= 0) {
             onStatus("This device cannot initialize 16 kHz microphone capture.")
