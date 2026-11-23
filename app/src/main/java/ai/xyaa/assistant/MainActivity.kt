@@ -735,9 +735,14 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             }.recoverCatching { geminiError ->
                 if (groqKey.isNullOrBlank() && deepSeekKey.isNullOrBlank()) throw geminiError
                 runOnUiThread { answer("Thinking…", false) }
-                ProviderFallbackClient(groqKey, deepSeekKey).complete(aiPrompt) { _ ->
-                    runOnUiThread { answer("Thinking…", false) }
-                }
+                ProviderFallbackClient(groqKey, deepSeekKey).complete(
+                    aiPrompt,
+                    onText = { partial ->
+                        val visible = AssistantTextFormatter.forRichDisplay(partial)
+                        if (visible.isNotBlank()) runOnUiThread { answer(visible, false) }
+                    },
+                    onProvider = { _ -> runOnUiThread { answer("Thinking…", false) } }
+                )
             }.getOrElse { formatAiError(it) }
 
             if (pdfRequest) rememberTurn("assistant", "Created the requested PDF document.")
