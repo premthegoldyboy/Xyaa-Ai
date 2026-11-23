@@ -60,7 +60,7 @@ test('memory UI discloses provider sharing of relevant local context', () => {
 });
 
 test('personal memory relevance uses exact normalized terms instead of substring collisions', () => {
-  const store = read('app/src/main/java/ai/xyaa/assistant/PersonalMemoryStore.kt');
+  // Reuse the module-level source fixture.
   assert.match(store, /private fun memoryTerms\(value: String\)/);
   assert.match(store, /terms\.intersect\(itemTerms\)\.size/);
   assert.match(store, /"favorite", "favorites", "favourite", "favourites" -> "favourite"/);
