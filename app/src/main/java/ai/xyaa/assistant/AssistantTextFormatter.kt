@@ -6,7 +6,7 @@ package ai.xyaa.assistant
  */
 internal object AssistantTextFormatter {
     private val spokenLine = Regex("(?im)^\\s*\\*{0,2}SPOKEN:\\*{0,2}\\s*(.+)$")
-    private val hiddenBlocks = Regex("(?is)<(think|analysis|reasoning|tool_call|function_call)>.*?</\\1>|<\\|(?:analysis|thinking|reasoning|tool_call|function_call)\\|>.*?<\\|end\\|>")
+    private val hiddenBlocks = Regex("(?is)<(think|analysis|reasoning|tool_call|function_call|internal_monologue)>.*?</\\1>|<\\|(?:analysis|thinking|reasoning|tool_call|function_call|tool_code)\\|>.*?<\\|(?:end|fim_suffix)\\|>|\\[\\[(?:analysis|thinking|reasoning|tool_call)\\]\].*?\\[\\[end\\]\\]")
     private val markdownLink = Regex("\\[([^\\]]+)]\\((https?://[^)]+)\\)")
 
     /** Removes protocol noise while preserving Markdown for the rich chat renderer. */
@@ -15,7 +15,8 @@ internal object AssistantTextFormatter {
         return raw
             .replace(hiddenBlocks, "")
             .replace(Regex("(?i)\\*{0,2}SPOKEN:\\*{0,2}\\s*"), "")
-            .replace(Regex("(?im)^\\s*(?:internal|background|debug|tool|analysis|reasoning|private thoughts?|chain of thought)\\s*(?:status|note)?\\s*:\\s*.*$"), "")
+            .replace(Regex("(?im)^\\s*(?:internal(?:\\s+monologue)?|background|debug|tool(?:\\s+call)?|analysis|reasoning|private thoughts?|chain of thought|inner dialogue|scratchpad)\\s*(?:status|note|trace)?\\s*:\\s*.*$"), "")
+            .replace(Regex("(?im)^\\s*(?:<\\|(?:assistant|system|developer|analysis|final|commentary)[^>]*\\|>|```(?:analysis|thinking|tool_code))\\s*$"), "")
             .replace(Regex("(?im)^\\s*(?:assistant|system|developer)\\s*:\\s*"), "")
             .replace(Regex("\\n{3,}"), "\\n\\n")
             .trim()
@@ -26,7 +27,8 @@ internal object AssistantTextFormatter {
         return raw
             .replace(hiddenBlocks, "")
             .replace(Regex("(?i)\\*{0,2}SPOKEN:\\*{0,2}\\s*"), "")
-            .replace(Regex("(?im)^\\s*(?:internal|background|debug|tool|analysis|reasoning|private thoughts?|chain of thought)\\s*(?:status|note)?\\s*:\\s*.*$"), "")
+            .replace(Regex("(?im)^\\s*(?:internal(?:\\s+monologue)?|background|debug|tool(?:\\s+call)?|analysis|reasoning|private thoughts?|chain of thought|inner dialogue|scratchpad)\\s*(?:status|note|trace)?\\s*:\\s*.*$"), "")
+            .replace(Regex("(?im)^\\s*(?:<\\|(?:assistant|system|developer|analysis|final|commentary)[^>]*\\|>|```(?:analysis|thinking|tool_code))\\s*$"), "")
             .replace(Regex("(?im)^\\s*(?:assistant|system|developer)\\s*:\\s*"), "")
             .replace(Regex("(?m)^\\s*\\x60{3,}[^\\n]*$"), "")
             .replace(Regex("(?m)^\\s*---+\\s*$"), "")
