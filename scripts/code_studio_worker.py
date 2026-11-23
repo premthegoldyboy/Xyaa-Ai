@@ -75,8 +75,8 @@ result = json.loads(response_body)
 
 parts = result.get("candidates", [{}])[0].get("content", {}).get("parts", [])
 patch = "".join(part.get("text", "") for part in parts).strip()
-if patch.startswith("\`\`\`"):
-    patch = patch.split("\n", 1)[1].rsplit("\`\`\`", 1)[0].strip()
+if patch.startswith("```"):
+    patch = patch.split("\n", 1)[1].rsplit("```", 1)[0].strip()
 if patch == "NO_SAFE_PATCH" or not patch:
     raise SystemExit("Worker did not produce a safe patch.")
 if not patch.startswith("diff --git "):
