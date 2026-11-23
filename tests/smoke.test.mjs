@@ -44,8 +44,8 @@ test('Android agent router gives PDF and explicit research intents priority over
   const router = readFileSync(new URL('../app/src/main/java/ai/xyaa/assistant/XYAAAgentOrchestrator.kt', import.meta.url), 'utf8');
   const activity = readFileSync(new URL('../app/src/main/java/ai/xyaa/assistant/MainActivity.kt', import.meta.url), 'utf8');
   assert.match(router, /if \(pdf\)/);
-  assert.doesNotMatch(router, /isExplicitResearchRequest/);
-  assert.match(router, /search\\\\s\+for/);
+  assert.match(router, /isExplicitResearchRequest/);
+  assert.doesNotMatch(router, /search\\s\+for/);
   assert.match(router, /WEB_RESEARCH/);
   assert.ok(activity.indexOf('val agentPlan = XYAAAgentOrchestrator.plan') < activity.indexOf('val local = if (pdfRequest || agentPlan.needsResearch) null else skills.execute(prompt)'));
   assert.match(activity, /val researchRequest = agentPlan.needsResearch/);
