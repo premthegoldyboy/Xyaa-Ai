@@ -106,6 +106,6 @@ test('simple Google searches and weather requests stay on the built-in browser s
   assert.equal(router.includes('search\\\\s+for'), false);
   assert.equal(router.includes('|news|weather'), false);
   assert.equal(router.includes('google\\\\b'), false);
-  assert.match(skills, /search\\(\\?: for\\)\\?/);
+  assert.ok(skills.includes("search(?: for)?"));
   assert.match(skills, /val weather = Regex/);
 });
