@@ -230,3 +230,30 @@ test('Firecrawl is an optional encrypted web-research provider with source extra
   assert.ok(ui.includes('Firecrawl · Web research'));
   assert.ok(keyStore.includes('AndroidKeyStore'));
 });
+
+
+test('assistant transcript strips internal dialogue and provider control markers', () => {
+  const formatter = readFileSync(new URL('../app/src/main/java/ai/xyaa/assistant/AssistantTextFormatter.kt', import.meta.url), 'utf8');
+  assert.match(formatter, /internal_monologue/);
+  assert.match(formatter, /inner dialogue/);
+  assert.match(formatter, /tool_code/);
+  assert.match(formatter, /chain of thought/);
+  assert.match(formatter, /forRichDisplay/);
+});
+
+test('chat prompt uses real line breaks and explicitly prioritizes completed user-facing work', () => {
+  const activity = readFileSync(new URL('../app/src/main/java/ai/xyaa/assistant/MainActivity.kt', import.meta.url), 'utf8');
+  assert.match(activity, /Give the user the answer or deliverable they requested/);
+  assert.match(activity, /Never output private reasoning, internal dialogue, scratchpad/);
+  assert.match(activity, /Recent conversation context:\\n\$memoryContext/);
+  assert.doesNotMatch(activity, /Recent context:\\\\n\$memoryContext/);
+});
+
+test('30-day research uses date-bounded retrieval, relevance, recency and public engagement', () => {
+  const research = readFileSync(new URL('../app/src/main/java/ai/xyaa/assistant/ResearchEngine.kt', import.meta.url), 'utf8');
+  assert.match(research, /after:\$\{java\.time\.LocalDate\.now\(\)\.minusDays\(30\)\}/);
+  assert.match(research, /relevance \* 60 \+ freshness \* 30/);
+  assert.match(research, /engagementScore\.coerceIn\(0, 100\) \* 10/);
+  assert.match(research, /filterNot\(::isGamblingSource\)/);
+  assert.match(research, /Derive a short summary from the/);
+});
