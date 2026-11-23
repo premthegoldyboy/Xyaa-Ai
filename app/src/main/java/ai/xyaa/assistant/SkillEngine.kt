@@ -153,7 +153,7 @@ class SkillEngine(private val context: Context) {
             return launch(Intent(Intent.ACTION_VIEW, Uri.parse(url)), "Opening website.")
         }
         val open = Regex("^(?:please )?(?:open|launch|start) (.+?)[.!?]?$", RegexOption.IGNORE_CASE).find(text)
-        if (open != null) return openApp(open.groupValues[1].trim().removeSurrounding("\\\"").removeSurrounding("\\'"))
+        if (open != null) return openApp(open.groupValues[1].trim())
         return null
     }
 
