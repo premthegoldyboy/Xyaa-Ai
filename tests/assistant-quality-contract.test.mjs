@@ -206,3 +206,10 @@ test('voice model archives are validated in staging before replacing installed m
   assert.match(wake, /File\(staging, entry\.name\)/);
   assert.match(wake, /stagedModel\.renameTo\(modelDir\)/);
 });
+
+test('hidden protocol blocks are stripped before a spoken summary enters conversation memory', () => {
+  const formatter = read('app/src/main/java/ai/xyaa/assistant/AssistantTextFormatter.kt');
+  assert.match(formatter, /val cleaned = forDisplay\(raw\)/);
+  assert.match(formatter, /spokenLine\.find\(cleaned\)/);
+  assert.match(formatter, /Sanitize first/);
+});
