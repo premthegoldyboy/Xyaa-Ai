@@ -51,3 +51,14 @@ test('natural device commands are normalized and phone calls remain user-confirm
   assert.match(skills, /will not place a call automatically/);
   assert.match(skills, /Settings\.ACTION_WIFI_SETTINGS/);
 });
+
+
+test('a newer chat request owns the transcript and speech output', () => {
+  const activity = read('app/src/main/java/ai/xyaa/assistant/MainActivity.kt');
+  assert.match(activity, /AtomicLong\(0L\)/);
+  assert.match(activity, /requestSequence\.incrementAndGet\(\)/);
+  assert.match(activity, /requestSequence\.get\(\) == requestId/);
+  assert.match(activity, /stopSpeech\(completeInterrupted = false\)/);
+  assert.match(activity, /rememberForRequest/);
+  assert.match(activity, /sayForRequest/);
+});
