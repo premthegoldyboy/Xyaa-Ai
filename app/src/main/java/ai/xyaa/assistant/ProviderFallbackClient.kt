@@ -41,7 +41,7 @@ class ProviderFallbackClient(
         val connection = (URL(provider.endpoint).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             connectTimeout = 7000
-            readTimeout = 25000
+            readTimeout = 45000
             doOutput = true
             setRequestProperty("Content-Type", "application/json")
             setRequestProperty("Authorization", "Bearer " + provider.key)
@@ -51,10 +51,10 @@ class ProviderFallbackClient(
                 .put("model", provider.model)
                 .put("temperature", 0.35)
                 .put("stream", true)
-                .put("max_tokens", if (prompt.contains("complete document content", ignoreCase = true)) 4096 else 1024)
+                .put("max_tokens", if (prompt.contains("complete document content", ignoreCase = true)) 4096 else 2048)
                 .put("messages", JSONArray()
                     .put(JSONObject().put("role", "system").put("content",
-                        "You are XYAA, pronounced Zyaa, an Android AI assistant. Follow the user's actual requested action, deliverable, format, scope, and constraints; do not substitute advice for an explicitly requested artifact. For PDF/document requests, write the complete subject-specific document for the app's PDF export workflow and never tell the user to copy text to create the file. Research factual/current product specifications, distinguish model and regional variants, cite sources when available, and never invent facts. Be honest about actions the app has not performed."))
+                        "You are XYAA, pronounced Zyaa, an Android AI assistant. Follow the user's actual requested action, deliverable, format, scope, and constraints; do not substitute advice for an explicitly requested artifact. For PDF/document requests, write the complete subject-specific document for the app's PDF export workflow and never tell the user to copy text to create the file. Research factual/current product specifications, distinguish model and regional variants, cite sources when available, and never invent facts. Never reveal private chain-of-thought, hidden analysis, internal deliberation, or tool-routing notes; provide only a user-facing answer. Be honest about actions the app has not performed."))
                     .put(JSONObject().put("role", "user").put("content", prompt)))
             connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
             val status = connection.responseCode
