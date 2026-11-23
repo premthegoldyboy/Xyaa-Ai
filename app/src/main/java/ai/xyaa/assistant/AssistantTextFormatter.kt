@@ -6,7 +6,7 @@ package ai.xyaa.assistant
  */
 internal object AssistantTextFormatter {
     private val spokenLine = Regex("(?im)^\\s*\\*{0,2}SPOKEN:\\*{0,2}\\s*(.+)$")
-    private val hiddenBlocks = Regex("(?is)<(think|analysis|reasoning|tool_call|function_call)>.*?</\\1>")
+    private val hiddenBlocks = Regex("(?is)<(think|analysis|reasoning|tool_call|function_call)>.*?</\\1>|<\\|(?:analysis|thinking|reasoning|tool_call|function_call)\\|>.*?<\\|end\\|>")
     private val markdownLink = Regex("\\[([^\\]]+)]\\((https?://[^)]+)\\)")
 
     /** Removes protocol noise while preserving Markdown for the rich chat renderer. */
@@ -15,7 +15,7 @@ internal object AssistantTextFormatter {
         return raw
             .replace(hiddenBlocks, "")
             .replace(Regex("(?i)\\*{0,2}SPOKEN:\\*{0,2}\\s*"), "")
-            .replace(Regex("(?im)^\\s*(?:internal|background|debug|tool)\\s*(?:status|note)?\\s*:\\s*.*$"), "")
+            .replace(Regex("(?im)^\\s*(?:internal|background|debug|tool|analysis|reasoning|private thoughts?|chain of thought)\\s*(?:status|note)?\\s*:\\s*.*$"), "")
             .replace(Regex("(?im)^\\s*(?:assistant|system|developer)\\s*:\\s*"), "")
             .replace(Regex("\\n{3,}"), "\\n\\n")
             .trim()
