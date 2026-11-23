@@ -727,7 +727,10 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                     key,
                     aiPrompt,
                     onStatus = { _ -> runOnUiThread { answer("Thinking…", false) } },
-                    onText = { _ -> /* Keep generated tokens hidden until Gemini completes. */ }
+                    onText = { partial ->
+                        val visible = AssistantTextFormatter.forRichDisplay(partial)
+                        if (visible.isNotBlank()) runOnUiThread { answer(visible, false) }
+                    }
                 )
             }.recoverCatching { geminiError ->
                 if (groqKey.isNullOrBlank() && deepSeekKey.isNullOrBlank()) throw geminiError
@@ -746,11 +749,11 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                     openPdfPicker()
                     say("Your PDF is ready. Choose a location to save it.")
                 } else {
-                    // Reveal the same transcript progressively as the speech engine advances.
-                    answer("Speaking…", false)
-                    speakChatAnswer(response,
-                        onProgress = { visible -> answer(visible, false) },
-                        onComplete = { answer(response, true) })
+                    // Text streams during generation. Keep the completed answer visible while audio plays.
+                    val visibleAnswer = AssistantTextFormatter.forRichDisplay(response)
+                        .ifBlank { "I couldn't produce a user-facing answer. Please try again." }
+                    answer(visibleAnswer, true)
+                    say(visibleAnswer)
                 }
             }
         }.start()
@@ -1109,7 +1112,11 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                     val content = candidates.optJSONObject(0)?.optJSONObject("content") ?: continue
                     val parts = content.optJSONArray("parts") ?: continue
                     for (i in 0 until parts.length()) {
-                        val piece = parts.optJSONObject(i)?.optString("text").orEmpty()
+                        val part = parts.optJSONObject(i) ?: continue
+                        // Gemini 2.5+ can emit thought parts before the final answer.
+                        // Never append or render parts explicitly marked as internal thoughts.
+                        if (part.optBoolean("thought", false)) continue
+                        val piece = part.optString("text").orEmpty()
                         if (piece.isNotBlank()) {
                             accumulated.append(piece)
                             onText(accumulated.toString())
