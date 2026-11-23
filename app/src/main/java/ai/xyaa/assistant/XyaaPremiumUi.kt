@@ -106,7 +106,7 @@ private fun XyaaLoadingIndicator(modifier: Modifier = Modifier) {
 @Composable
 internal fun XyaaPremiumApp(
     onSend: (String, (String, Boolean) -> Unit) -> Unit,
-    onVoice: () -> Unit,
+    onVoice: ((String) -> Unit) -> Unit,
     voiceInputStatus: String,
     onSaveKey: (String) -> Unit,
     onLoadKey: () -> String?,
@@ -211,11 +211,11 @@ internal fun XyaaPremiumApp(
             Box(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
                 when (tab) {
                     "Orb" -> HomePage(liveVoiceActive, liveVoiceStatus, wakeWordEnabled,
-                        { tab = "Live Voice"; onStartLiveVoice() }, onStopLiveVoice, onStartWakeWord, onStopWakeWord, { tab = "Chat"; onVoice() },
+                        { tab = "Live Voice"; onStartLiveVoice() }, onStopLiveVoice, onStartWakeWord, onStopWakeWord, { tab = "Chat"; onVoice { spoken -> submit(spoken) } },
                         { submit(it) }, { tab = "Research" }, { tab = "Chat" })
                     "Live Voice" -> LiveVoicePage(liveVoiceActive, liveVoiceStatus, liveTranscript,
                         onStartLiveVoice, onStopLiveVoice, { tab = "Chat"; onVoice() })
-                    "Chat" -> ChatPage(messages, input, { input = it }, busy, { submit(it) }, onVoice, voiceInputStatus, { messages = emptyList() })
+                    "Chat" -> ChatPage(messages, input, { input = it }, busy, { submit(it) }, { onVoice { spoken -> submit(spoken) } }, voiceInputStatus, { messages = emptyList() })
                     "Research" -> ResearchPage(researchQuery, { researchQuery = it }, busy,
                         { q -> researchQuery = q; tab = "Research"; submit("Research $q") }, messages, onShareReport)
                     "Skills" -> SkillsPage { command ->
