@@ -9,7 +9,7 @@ test('Gemini internal thought parts are excluded and final text streams into cha
   const activity = read('app/src/main/java/ai/xyaa/assistant/MainActivity.kt');
   assert.match(activity, /part\.optBoolean\("thought", false\)/);
   assert.match(activity, /AssistantTextFormatter\.forRichDisplay\(partial\)/);
-  assert.match(activity, /Never reveal private chain-of-thought/);
+  assert.match(activity, /Never output private reasoning, internal dialogue, scratchpad/);
   assert.match(activity, /answer\(visibleAnswer, true\)/);
 });
 
