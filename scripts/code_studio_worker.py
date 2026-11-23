@@ -27,7 +27,7 @@ SECRET_NAME = re.compile(r"(local\.properties|gradle\.properties|keystore|\.jks$
 files, total = [], 0
 for path in sorted(ROOT.rglob("*")):
     relative = path.relative_to(ROOT).as_posix()
-    if not path.is_file() or any(part in SKIP_PARTS for part in path.parts):
+    if path.is_symlink() or not path.is_file() or any(part in SKIP_PARTS for part in path.parts):
         continue
     if SECRET_NAME.search(path.name) or not relative.startswith(SAFE_ROOTS) or path.suffix not in SAFE_SUFFIXES:
         continue
@@ -60,10 +60,18 @@ payload = json.dumps({
     "contents": [{"parts": [{"text": prompt}]}],
     "generationConfig": {"temperature": 0.15, "maxOutputTokens": 16000},
 }).encode()
-url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
-request = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
+url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+request = urllib.request.Request(
+    url,
+    data=payload,
+    headers={"Content-Type": "application/json", "x-goog-api-key": api_key},
+    method="POST",
+)
 with urllib.request.urlopen(request, timeout=180) as response:
-    result = json.loads(response.read())
+    response_body = response.read(4 * 1024 * 1024 + 1)
+if len(response_body) > 4 * 1024 * 1024:
+    raise SystemExit("Gemini response exceeded the 4 MB safety limit.")
+result = json.loads(response_body)
 
 parts = result.get("candidates", [{}])[0].get("content", {}).get("parts", [])
 patch = "".join(part.get("text", "") for part in parts).strip()
@@ -89,7 +97,11 @@ def validate_path(raw_path: str) -> None:
 
 # Validate both git headers and file headers, including rename/copy metadata.
 for line in patch.splitlines():
-    if line.startswith("diff --git "):
+    if line.startswith(("new file mode ", "deleted file mode ", "old mode ", "new mode ")):
+        mode = line.rsplit(" ", 1)[-1]
+        if mode != "100644":
+            raise SystemExit("Patch contains a symlink, executable, or non-regular file mode.")
+    elif line.startswith("diff --git "):
         match = re.fullmatch(r"diff --git a/(.+) b/(.+)", line)
         if not match:
             raise SystemExit("Patch contains an ambiguous or quoted git path.")
