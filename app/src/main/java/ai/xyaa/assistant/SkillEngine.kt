@@ -15,8 +15,12 @@ class SkillEngine(private val context: Context) {
     private val prefs = context.getSharedPreferences("xyaa_notes", Context.MODE_PRIVATE)
 
     fun execute(raw: String): String? {
-        val text = raw.trim()
-        val lower = text.lowercase(Locale.getDefault())
+        var text = raw.trim()
+        repeat(2) {
+            text = text.replace(Regex("(?i)^hey\\s+(?:xyaa|zyaa)[, ]+"), "")
+                .replace(Regex("(?i)^(?:please\\s+|can you\\s+|could you\\s+|would you\\s+)+"), "")
+        }
+        val lower = text.lowercase(Locale.ROOT)
 
         if (lower.matches(Regex("^(hi|hello|hey|hey xyaa|hey zyaa)[!. ]*$"))) return "Hey! What can I help you with?"
         if (lower.contains("what time") || lower == "time" || lower == "current time") {
@@ -112,7 +116,23 @@ class SkillEngine(private val context: Context) {
         val map = Regex("^(?:directions to|navigate to|find on maps) (.+)$", RegexOption.IGNORE_CASE).find(text)
         if (map != null) return launch(Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=" + Uri.encode(map.groupValues[1]))), "Opening directions.")
         val call = Regex("^(?:call|phone) (.+)$", RegexOption.IGNORE_CASE).find(text)
-        if (call != null) return launch(Intent(Intent.ACTION_DIAL).setData(Uri.parse("tel:")), "Opening the dialler. Choose the contact there to continue.")
+        if (call != null) {
+            val target = call.groupValues[1].trim()
+            val number = target.filter { it.isDigit() || it == '+' }
+            return if (number.length >= 5 && target.all { it.isDigit() || it in "+- ()" }) {
+                launch(Intent(Intent.ACTION_DIAL).setData(Uri.parse("tel:" + Uri.encode(number))), "Opening the dialler with the number. Review it and tap Call.")
+            } else {
+                launch(Intent(Intent.ACTION_VIEW, Uri.parse("content://contacts/people/")), "Opening contacts. Choose $target there; XYAA will not place a call automatically.")
+            }
+        }
+        if ((lower.startsWith("turn on ") || lower.startsWith("turn off ") || lower.startsWith("enable ") || lower.startsWith("disable ")) &&
+            (lower.contains("wifi") || lower.contains("wi-fi"))) {
+            return launch(Intent(Settings.ACTION_WIFI_SETTINGS), "Opening Wi-Fi settings. Android will let you confirm the change.")
+        }
+        if ((lower.startsWith("turn on ") || lower.startsWith("turn off ") || lower.startsWith("enable ") || lower.startsWith("disable ")) &&
+            lower.contains("bluetooth")) {
+            return launch(Intent(Settings.ACTION_BLUETOOTH_SETTINGS), "Opening Bluetooth settings. Android will let you confirm the change.")
+        }
         if (lower in listOf("open settings", "phone settings", "device settings")) return launch(Intent(Settings.ACTION_SETTINGS), "Opening device settings.")
         if (lower.contains("bluetooth settings")) return launch(Intent(Settings.ACTION_BLUETOOTH_SETTINGS), "Opening Bluetooth settings.")
         if (lower.contains("wifi settings") || lower.contains("wi-fi settings")) return launch(Intent(Settings.ACTION_WIFI_SETTINGS), "Opening Wi-Fi settings.")
