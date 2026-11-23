@@ -54,11 +54,10 @@ object XYAAAgentOrchestrator {
         val lower = prompt.trim().lowercase(Locale.ROOT)
         if (lower.isBlank()) return false
         if (Regex("\\b(trend|trending|community sentiment|what people are saying|last\\s+30\\s+days|past\\s+30\\s+days)\\b").containsMatchIn(lower)) return true
-        if (Regex("\\b(research|investigate|compare|look\\s+up)\\b").containsMatchIn(lower) ||
-            Regex("^\\s*google\\b").containsMatchIn(lower)) return true
-        if (Regex("\\b(search(?:\\s+the)?\\s+web|web\\s+search|search\\s+for|find\\s+out\\s+about|look\\s+up)\\b")
+        if (Regex("\\b(research|investigate|compare|look\\s+up)\\b").containsMatchIn(lower)
+        if (Regex("\\b(search(?:\\s+the)?\\s+web|web\\s+search|find\\s+out\\s+about|look\\s+up)\\b")
                 .containsMatchIn(lower)) return true
-        if (Regex("\\b(latest|current|currently|up[- ]to[- ]date|recent\\s+(?:news|updates)|today'?s\\s+(?:news|updates)|official\\s+sources|with\\s+sources|cite\\s+sources|news|weather)\\b")
+        if (Regex("\\b(latest|current|currently|up[- ]to[- ]date|recent\\s+(?:news|updates)|today'?s\\s+(?:news|updates)|official\\s+sources|with\\s+sources|cite\\s+sources)\\b")
                 .containsMatchIn(lower)) return true
         return Regex("^\\s*(?:make|write)\\s+(?:me\\s+)?a\\s+report\\b").containsMatchIn(lower)
     }
