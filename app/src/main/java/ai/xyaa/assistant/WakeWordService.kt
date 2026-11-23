@@ -70,7 +70,9 @@ class WakeWordService : Service() {
             worker = Thread({ runDetector() }, "XYAA-WakeWord")
                 .apply { start() }
         }
-        return START_STICKY
+        // A microphone service must only run after an explicit foreground user action.
+        // Do not let Android restart it in the background after process death.
+        return START_NOT_STICKY
     }
 
     private fun runDetector() {
