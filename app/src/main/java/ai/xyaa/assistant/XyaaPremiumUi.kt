@@ -214,7 +214,7 @@ internal fun XyaaPremiumApp(
                         { tab = "Live Voice"; onStartLiveVoice() }, onStopLiveVoice, onStartWakeWord, onStopWakeWord, { tab = "Chat"; onVoice { spoken -> submit(spoken) } },
                         { submit(it) }, { tab = "Research" }, { tab = "Chat" })
                     "Live Voice" -> LiveVoicePage(liveVoiceActive, liveVoiceStatus, liveTranscript,
-                        onStartLiveVoice, onStopLiveVoice, { tab = "Chat"; onVoice() })
+                        onStartLiveVoice, onStopLiveVoice, { tab = "Chat"; onVoice { spoken -> submit(spoken) } })
                     "Chat" -> ChatPage(messages, input, { input = it }, busy, { submit(it) }, { onVoice { spoken -> submit(spoken) } }, voiceInputStatus, { messages = emptyList() })
                     "Research" -> ResearchPage(researchQuery, { researchQuery = it }, busy,
                         { q -> researchQuery = q; tab = "Research"; submit("Research $q") }, messages, onShareReport)
