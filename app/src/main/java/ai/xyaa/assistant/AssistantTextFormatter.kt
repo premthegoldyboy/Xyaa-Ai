@@ -43,7 +43,7 @@ internal object AssistantTextFormatter {
 
     fun forDisplay(raw: String): String {
         if (raw.isBlank()) return ""
-        return raw
+        return forStreamingDisplay(raw)
             .replace(hiddenBlocks, "")
             .replace(Regex("(?i)\\*{0,2}SPOKEN:\\*{0,2}\\s*"), "")
             .replace(Regex("(?im)^\\s*(?:internal(?:\\s+monologue)?|background|debug|tool(?:\\s+call)?|analysis|reasoning|private thoughts?|chain of thought|inner dialogue|scratchpad)\\s*(?:status|note|trace)?\\s*:\\s*.*$"), "")
