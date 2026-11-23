@@ -211,7 +211,7 @@ test('hidden protocol blocks are stripped before a spoken summary enters convers
   const formatter = read('app/src/main/java/ai/xyaa/assistant/AssistantTextFormatter.kt');
   assert.match(formatter, /val safe = stripHiddenBlocks\(raw\)/);
   assert.match(formatter, /spokenLine\.find\(safe\)/);
-  assert.match(formatter, /Sanitize first/);
+  assert.match(formatter, /Strip hidden blocks before extracting SPOKEN/);
 });
 
 test('forget-all clears both memory domains without re-saving its confirmation', () => {
