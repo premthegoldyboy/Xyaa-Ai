@@ -64,6 +64,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     private val recentMemory = mutableStateOf<List<String>>(emptyList())
     private var liveVoiceSession: GeminiLiveVoiceSession? = null
     private var pdfDraft = ""
+    private var pendingPdfRequestId: Long? = null
     private var speechRecognizer: SpeechRecognizer? = null
     private var pendingVoiceRecognition: ((String) -> Unit)? = null
     private val voiceInputStatus = mutableStateOf("")
@@ -715,7 +716,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                             pdfDraft = rendered
                             answer("Preparing your PDF…", false)
                             // The complete document belongs in the PDF, not duplicated in the chat bubble.
-                            openPdfPicker()
+                            openPdfPicker(requestId)
                             speakChatAnswer(
                                 spokenSummary,
                                 onProgress = { visible -> answer(visible, false) },
@@ -793,7 +794,8 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     }
 
 
-    private fun openPdfPicker() {
+    private fun openPdfPicker(requestId: Long) {
+        pendingPdfRequestId = requestId
         val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
             type = "application/pdf"
@@ -1271,14 +1273,18 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     @Deprecated("Deprecated by Android; retained for compatibility.")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == 71 && resultCode == Activity.RESULT_OK) {
-            data?.data?.let { uri ->
-                runCatching { writePdf(uri) }
-                    .onSuccess {
-                        managementAgent.registerPdf(uri)
-                        say("Your PDF has been saved and added to your XYAA library.")
-                    }
-                    .onFailure { error -> say("PDF export failed: " + error.message.orEmpty().take(100)) }
+        if (requestCode == 71) {
+            val ownerRequest = pendingPdfRequestId
+            pendingPdfRequestId = null
+            if (ownerRequest != null && ownerRequest == requestSequence.get() && resultCode == Activity.RESULT_OK) {
+                data?.data?.let { uri ->
+                    runCatching { writePdf(uri) }
+                        .onSuccess {
+                            managementAgent.registerPdf(uri)
+                            say("Your PDF has been saved and added to your XYAA library.")
+                        }
+                        .onFailure { error -> say("PDF export failed: " + error.message.orEmpty().take(100)) }
+                }
             }
         }
         if (requestCode == 72 && resultCode == Activity.RESULT_OK) {
