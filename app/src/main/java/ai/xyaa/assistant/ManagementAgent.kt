@@ -108,7 +108,7 @@ class ManagementAgent(context: Context) {
 
         if (Regex("(?i)^(?:show|list|view|read)(?:\\s+all)?\\s+(?:my\\s+)?notes$|^(?:my\\s+notes|notes)$").matches(text)) {
             if (notes.length() == 0) return "Your notes are empty."
-            return "Your saved notes ( ${notes.length()} ):\\n" + (0 until notes.length()).joinToString("\\n") { i ->
+            return "Your saved notes ( ${notes.length()} ):\n" + (0 until notes.length()).joinToString("\n") { i ->
                 "${i + 1}. ${notes.getJSONObject(i).optString("text")}"
             }
         }
@@ -119,7 +119,7 @@ class ManagementAgent(context: Context) {
             val found = (0 until notes.length()).map { notes.getJSONObject(it).optString("text") }
                 .filter { it.contains(query, true) }
             return if (found.isEmpty()) "I couldn't find a note matching “$query”." else
-                "Notes matching “$query”:\\n" + found.mapIndexed { i, s -> "${i + 1}. $s" }.joinToString("\\n")
+                "Notes matching “$query”:\n" + found.mapIndexed { i, s -> "${i + 1}. $s" }.joinToString("\n")
         }
 
         val deleteIndex = Regex("(?i)^(?:delete|remove)\\s+note\\s+#?(\\d+)$").find(text)
@@ -164,7 +164,7 @@ class ManagementAgent(context: Context) {
         val records = readPdfs()
         if (Regex("(?i)^(?:show|list|view)(?:\\s+all)?\\s+(?:my\\s+)?pdfs$|^(?:my\\s+pdfs|pdf library|show my documents)$").matches(text)) {
             if (records.length() == 0) return "Your XYAA PDF library is empty. PDFs you create and save through XYAA will appear here."
-            return "Your saved PDFs:\\n" + (0 until records.length()).joinToString("\\n") { i ->
+            return "Your saved PDFs:\n" + (0 until records.length()).joinToString("\n") { i ->
                 "${i + 1}. ${records.getJSONObject(i).optString("name")}"
             }
         }
@@ -175,7 +175,7 @@ class ManagementAgent(context: Context) {
             val matches = (0 until records.length()).map { records.getJSONObject(it) }
                 .filter { it.optString("name").contains(query, true) }
             return if (matches.isEmpty()) "I couldn't find a saved PDF matching “$query”." else
-                "Matching PDFs:\\n" + matches.mapIndexed { i, item -> "${i + 1}. ${item.optString("name")}" }.joinToString("\\n")
+                "Matching PDFs:\n" + matches.mapIndexed { i, item -> "${i + 1}. ${item.optString("name")}" }.joinToString("\n")
         }
 
         val delete = Regex("(?i)^(?:delete|remove)\\s+(?:the\\s+)?pdf\\s+(.+)$").find(text)
