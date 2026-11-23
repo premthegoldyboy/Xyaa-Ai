@@ -78,3 +78,12 @@ test('streaming chat never renders an unfinished internal reasoning block', () =
   assert.match(formatter, /lastOpen > lastClose/);
   assert.equal(activity.split('AssistantTextFormatter.forStreamingDisplay(partial)').length - 1, 2);
 });
+
+
+test('Gemini research filters prohibited source categories without shifting grounding citations', () => {
+  const research = read('app/src/main/java/ai/xyaa/assistant/ResearchEngine.kt');
+  assert.match(research, /if \(isGamblingSource\(source\)/);
+  assert.match(research, /citationNumbers\[i\] = sources\.size/);
+  assert.match(research, /applyGroundingCitations\(raw, candidate, citationNumbers\)/);
+  assert.match(research, /citationNumbers\[indices\.optInt\(it, -1\)\]/);
+});
