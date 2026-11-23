@@ -640,6 +640,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                     ?: "I couldn't turn that request into a safe file operation. Please specify the note or PDF and the action."
                 rememberForRequest("assistant", result)
                 runOnUiThread {
+                    if (requestSequence.get() != requestId) return@runOnUiThread
                     answer(result, true)
                     speakChatAnswer(result, onProgress = { visible -> answer(visible, false) }, onComplete = { answer(result, true) })
                 }
@@ -708,9 +709,10 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                     val rendered = result.asText()
                     val spokenSummary = result.spoken.ifBlank { "Research report completed." }
                     if (pdfRequest) {
-                        pdfDraft = rendered
                         rememberForRequest("assistant", "Created a research-backed PDF about ${result.topic}.")
                         runOnUiThread {
+                            if (requestSequence.get() != requestId) return@runOnUiThread
+                            pdfDraft = rendered
                             answer("Preparing your PDF…", false)
                             // The complete document belongs in the PDF, not duplicated in the chat bubble.
                             openPdfPicker()
@@ -725,6 +727,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                     } else {
                         rememberForRequest("assistant", spokenSummary)
                         runOnUiThread {
+                            if (requestSequence.get() != requestId) return@runOnUiThread
                             answer("Research complete. Speaking the summary…", false)
                             speakChatAnswer(
                                 spokenSummary,
@@ -736,7 +739,11 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 }.onFailure { error ->
                     val message = "Research failed: ${error.message.orEmpty().take(180)}"
                     rememberForRequest("assistant", message)
-                    runOnUiThread { answer(message, false); speakChatAnswer(message, { answer(it, false) }) { answer(message, true) } }
+                    runOnUiThread {
+                        if (requestSequence.get() != requestId) return@runOnUiThread
+                        answer(message, false)
+                        speakChatAnswer(message, { answer(it, false) }) { answer(message, true) }
+                    }
                 }
                 return@Thread
             }
@@ -768,6 +775,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             if (pdfRequest) rememberForRequest("assistant", "Created the requested PDF document.")
             else rememberForRequest("assistant", response)
             runOnUiThread {
+                if (requestSequence.get() != requestId) return@runOnUiThread
                 if (pdfRequest && response.isNotBlank()) {
                     pdfDraft = response
                     answer("Your PDF is ready. Choose a location to save it.", true)
