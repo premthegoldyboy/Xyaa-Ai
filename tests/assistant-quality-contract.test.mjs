@@ -38,7 +38,7 @@ test('recent-trends intent routes to research and applies a 30-day relevance pip
   assert.match(research, /rankRecentSources/);
   assert.match(research, /engagementScore/);
   assert.match(research, /Exclude gambling-related sources/);
-  assert.equal((research.match(/optBoolean\\("thought", false\\)/g) || []).length, 2);
+  assert.equal((research.match(/optBoolean\("thought", false\)/g) || []).length, 2);
 });
 
 test('natural device commands are normalized and phone calls remain user-confirmed', () => {
