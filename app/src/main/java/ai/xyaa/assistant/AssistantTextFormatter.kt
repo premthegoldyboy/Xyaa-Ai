@@ -26,7 +26,7 @@ internal object AssistantTextFormatter {
         return raw
             .replace(hiddenBlocks, "")
             .replace(Regex("(?i)\\*{0,2}SPOKEN:\\*{0,2}\\s*"), "")
-            .replace(Regex("(?im)^\\s*(?:internal|background|debug|tool)\\s*(?:status|note)?\\s*:\\s*.*$"), "")
+            .replace(Regex("(?im)^\\s*(?:internal|background|debug|tool|analysis|reasoning|private thoughts?|chain of thought)\\s*(?:status|note)?\\s*:\\s*.*$"), "")
             .replace(Regex("(?im)^\\s*(?:assistant|system|developer)\\s*:\\s*"), "")
             .replace(Regex("(?m)^\\s*\\x60{3,}[^\\n]*$"), "")
             .replace(Regex("(?m)^\\s*---+\\s*$"), "")
