@@ -205,7 +205,10 @@ class WakeWordService : Service() {
             }
         } finally { connection.disconnect() }
         check(archive.length() > 1024 * 1024) { "Wake-word model download was incomplete." }
-        val canonicalRoot = root.canonicalFile.toPath()
+        val staging = File(root, "$MODEL_NAME.installing")
+        staging.deleteRecursively()
+        staging.mkdirs()
+        val canonicalRoot = staging.canonicalFile.toPath()
         var extracted = 0L
         var entries = 0
         TarArchiveInputStream(BZip2CompressorInputStream(BufferedInputStream(archive.inputStream()))).use { tar ->
@@ -214,7 +217,7 @@ class WakeWordService : Service() {
                 entries++
                 require(entries <= MAX_ARCHIVE_ENTRIES) { "Wake-word archive contains too many entries." }
                 require(!entry.isSymbolicLink && !entry.isLink) { "Links are not allowed in the wake-word archive." }
-                val target = File(root, entry.name).canonicalFile
+                val target = File(staging, entry.name).canonicalFile
                 require(target.toPath().startsWith(canonicalRoot)) { "Unsafe path in wake-word model archive." }
                 if (entry.isDirectory) target.mkdirs()
                 else if (entry.isFile) {
@@ -233,6 +236,11 @@ class WakeWordService : Service() {
                 }
             }
         }
+        val stagedModel = File(staging, MODEL_NAME)
+        check(needed.all { File(stagedModel, it).isFile }) { "Wake-word model installation is incomplete." }
+        modelDir.deleteRecursively()
+        check(stagedModel.renameTo(modelDir)) { "Could not finalize the wake-word model installation." }
+        staging.deleteRecursively()
         archive.delete()
         check(needed.all { File(modelDir, it).isFile }) { "Wake-word model installation is incomplete." }
         return modelDir
