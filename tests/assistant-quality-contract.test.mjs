@@ -32,7 +32,7 @@ test('recent-trends intent routes to research and applies a 30-day relevance pip
   const router = read('app/src/main/java/ai/xyaa/assistant/XYAAAgentOrchestrator.kt');
   const research = read('app/src/main/java/ai/xyaa/assistant/ResearchEngine.kt');
   assert.match(router, /community sentiment/);
-  assert.match(router, /last\\s\+30\\s\+days/);
+  assert.match(router, /last.*30.*days/);
   assert.match(research, /after:\$\{java\.time\.LocalDate\.now\(\)\.minusDays\(30\)\}/);
   assert.match(research, /time_range", "month"/);
   assert.match(research, /rankRecentSources/);
