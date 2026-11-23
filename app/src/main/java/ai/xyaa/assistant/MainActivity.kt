@@ -47,6 +47,7 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
+import java.security.MessageDigest
 import java.util.Locale
 
 class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
@@ -1003,11 +1004,19 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
 
     @Volatile private var cachedGeminiModels: List<String> = emptyList()
     @Volatile private var modelCacheTimeMs: Long = 0L
+    @Volatile private var modelCacheKeyFingerprint: String? = null
 
     // Discover models enabled for this API key, then prioritize fast, stable text models.
+    private fun modelKeyFingerprint(apiKey: String): String =
+        MessageDigest.getInstance("SHA-256")
+            .digest(apiKey.trim().toByteArray(Charsets.UTF_8))
+            .take(8).joinToString("") { "%02x".format(it.toInt() and 0xff) }
+
     private fun discoverGeminiModels(apiKey: String): List<String> {
         val now = System.currentTimeMillis()
-        if (cachedGeminiModels.isNotEmpty() && now - modelCacheTimeMs < 6 * 60 * 60 * 1000L) {
+        val fingerprint = modelKeyFingerprint(apiKey)
+        if (cachedGeminiModels.isNotEmpty() && modelCacheKeyFingerprint == fingerprint &&
+            now - modelCacheTimeMs < 6 * 60 * 60 * 1000L) {
             return cachedGeminiModels
         }
         val preferred = listOf(
@@ -1051,6 +1060,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         val result = ordered.distinct().take(8)
         if (result.isNotEmpty()) {
             cachedGeminiModels = result
+            modelCacheKeyFingerprint = fingerprint
             modelCacheTimeMs = now
         }
         return result
@@ -1066,8 +1076,10 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         // Use known, broadly available models until asynchronous discovery has populated the cache.
         val fastFallback = listOf("gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.5-flash-lite")
         val now = System.currentTimeMillis()
+        val fingerprint = modelKeyFingerprint(apiKey)
         val cached = cachedGeminiModels.takeIf {
-            it.isNotEmpty() && now - modelCacheTimeMs < 6 * 60 * 60 * 1000L
+            it.isNotEmpty() && modelCacheKeyFingerprint == fingerprint &&
+                now - modelCacheTimeMs < 6 * 60 * 60 * 1000L
         }
         val models = (cached ?: fastFallback).take(3)
         if (cached == null) Thread { runCatching { discoverGeminiModels(apiKey) } }.start()
