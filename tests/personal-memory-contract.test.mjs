@@ -34,6 +34,6 @@ test('personal memory rejects credential-like content before encryption', () => 
     assert.ok(store.includes(phrase), 'missing credential filter: ' + phrase);
   }
   assert.match(store, /PRIVATE KEY/);
-  assert.match(store, /AES\/GCM\/NoPadding/);
+  assert.ok(store.includes("AES/GCM/NoPadding"));
   assert.match(store, /AndroidKeyStore/);
 });
