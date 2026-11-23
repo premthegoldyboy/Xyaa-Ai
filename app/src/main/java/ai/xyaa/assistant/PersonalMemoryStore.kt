@@ -106,11 +106,11 @@ class PersonalMemoryStore(context: Context) {
         if (isPaused()) return@synchronized ""
         val items = readUnsafe()
         if (items.isEmpty()) return@synchronized ""
-        val terms = Regex("[a-z0-9]{3,}").findAll(query.lowercase()).map { it.value }.toSet()
+        val terms = memoryTerms(query)
         if (terms.isEmpty()) return@synchronized ""
         val ranked = items.map { item ->
-            val haystack = (item.category + " " + item.content).lowercase()
-            item to terms.count { haystack.contains(it) }
+            val itemTerms = memoryTerms(item.category + " " + item.content)
+            item to terms.intersect(itemTerms).size
         }.sortedWith(compareByDescending<Pair<Item, Int>> { it.second }.thenByDescending { it.first.updatedAt })
         val selected = ranked.filter { it.second > 0 }.take(limit)
         selected.joinToString("\n") { "- [${it.first.category}] ${it.first.content}" }.take(2400)
@@ -167,6 +167,18 @@ class PersonalMemoryStore(context: Context) {
         )
         return generator.generateKey()
     }
+
+    private fun memoryTerms(value: String): Set<String> = Regex("[a-z0-9]{3,}")
+        .findAll(value.lowercase())
+        .map { match ->
+            when (match.value) {
+                "favorite", "favorites", "favourite", "favourites" -> "favourite"
+                "color", "colour" -> "color"
+                "goal", "goals", "plan", "plans", "deadline" -> "plan"
+                "hobby", "hobbies", "interest", "interests" -> "interest"
+                else -> match.value
+            }
+        }.toSet()
 
     private fun containsCredentialLikeData(value: String): Boolean {
         val lower = value.lowercase()
