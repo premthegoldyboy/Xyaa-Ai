@@ -1042,12 +1042,17 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 connection.disconnect()
             }
         }.getOrDefault(emptyList())
-        val eligible = if (discovered.isNotEmpty()) discovered.toSet() else preferred.toSet()
+        // Never cache guessed model IDs when discovery fails. The caller retains its
+        // small, known fallback list and retries discovery on a later request.
+        if (discovered.isEmpty()) return emptyList()
+        val eligible = discovered.toSet()
         val ordered = preferred.filter { it in eligible } +
-            discovered.filter { it !in preferred && it in eligible }.sorted()
-        val result = ordered.distinct().take(8).ifEmpty { preferred.take(5) }
-        cachedGeminiModels = result
-        modelCacheTimeMs = now
+            discovered.filter { it !in preferred }.sorted()
+        val result = ordered.distinct().take(8)
+        if (result.isNotEmpty()) {
+            cachedGeminiModels = result
+            modelCacheTimeMs = now
+        }
         return result
     }
 
