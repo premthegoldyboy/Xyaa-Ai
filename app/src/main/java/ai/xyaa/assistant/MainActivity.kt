@@ -1154,8 +1154,8 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         }
     }
 
-    private fun startVoiceInput(onRecognized: (String) -> Unit) {
-        pendingVoiceRecognition = onRecognized
+    private fun startVoiceInput(onRecognized: ((String) -> Unit)? = null) {
+        if (onRecognized != null) pendingVoiceRecognition = onRecognized
         stopSpeech() // the recognizer must not hear XYAA's own voice
         if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             voiceInputStatus.value = "Microphone permission is needed for voice input."
