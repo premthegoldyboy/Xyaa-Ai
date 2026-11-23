@@ -101,26 +101,30 @@ For product specifications, create a readable table with one row per attribute a
             if (raw.isBlank()) throw IllegalStateException("Gemini returned an empty report.")
             val chunks = candidate.optJSONObject("groundingMetadata")?.optJSONArray("groundingChunks") ?: JSONArray()
             val sources = mutableListOf<Source>()
+            val citationNumbers = linkedMapOf<Int, Int>()
             val seen = mutableSetOf<String>()
             for (i in 0 until chunks.length()) {
                 val web = chunks.optJSONObject(i)?.optJSONObject("web") ?: continue
                 val uri = web.optString("uri")
-                if (uri.startsWith("https://") || uri.startsWith("http://")) {
-                    if (seen.add(uri)) sources.add(Source(web.optString("title").ifBlank { uri }, uri))
-                }
+                if (!(uri.startsWith("https://") || uri.startsWith("http://"))) continue
+                val source = Source(web.optString("title").ifBlank { uri }, uri)
+                if (isGamblingSource(source) || !seen.add(uri) || sources.size >= 12) continue
+                sources.add(source)
+                // Grounding indices refer to the original chunk array, not the filtered source list.
+                citationNumbers[i] = sources.size
             }
             if (sources.isEmpty()) {
-                throw IllegalStateException("Google Search returned no verifiable source links for this report.")
+                throw IllegalStateException("Google Search returned no usable, permitted source links for this report.")
             }
-            val withCitations = applyGroundingCitations(raw, candidate, sources)
+            val withCitations = applyGroundingCitations(raw, candidate, citationNumbers)
             val split = splitSpoken(withCitations)
-            return Report(topic, split.first, split.second, sources.take(12), "Gemini Search")
+            return Report(topic, split.first, split.second, sources, "Gemini Search")
         } finally {
             connection.disconnect()
         }
     }
 
-    private fun applyGroundingCitations(text: String, candidate: JSONObject, sources: List<Source>): String {
+    private fun applyGroundingCitations(text: String, candidate: JSONObject, citationNumbers: Map<Int, Int>): String {
         val metadata = candidate.optJSONObject("groundingMetadata") ?: return text
         val supports = metadata.optJSONArray("groundingSupports") ?: return text
         val insertions = mutableListOf<Pair<Int, String>>()
@@ -129,8 +133,8 @@ For product specifications, create a readable table with one row per attribute a
             val segment = support.optJSONObject("segment") ?: continue
             val end = segment.optInt("endIndex", -1)
             val indices = support.optJSONArray("groundingChunkIndices") ?: continue
-            val markers = (0 until indices.length()).mapNotNull { indices.optInt(it, -1).takeIf { idx -> idx >= 0 && idx < sources.size } }
-                .distinct().joinToString("") { " [${it + 1}]" }
+            val markers = (0 until indices.length()).mapNotNull { citationNumbers[indices.optInt(it, -1)] }
+                .distinct().joinToString("") { " [$it]" }
             if (end in 1..text.length && markers.isNotBlank()) insertions.add(end to markers)
         }
         var result = text
