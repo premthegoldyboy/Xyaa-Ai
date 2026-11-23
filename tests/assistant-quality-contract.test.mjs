@@ -69,3 +69,12 @@ test('remember-note commands are not misrouted into personal memory', () => {
   assert.ok(activity.includes('remember\\\\s+(?:a\\\\s+)?note\\\\b'));
   assert.match(activity, /rememberMatch != null/);
 });
+
+
+test('streaming chat never renders an unfinished internal reasoning block', () => {
+  const formatter = read('app/src/main/java/ai/xyaa/assistant/AssistantTextFormatter.kt');
+  const activity = read('app/src/main/java/ai/xyaa/assistant/MainActivity.kt');
+  assert.match(formatter, /fun forStreamingDisplay/);
+  assert.match(formatter, /lastOpen > lastClose/);
+  assert.equal(activity.split('AssistantTextFormatter.forStreamingDisplay(partial)').length - 1, 2);
+});
