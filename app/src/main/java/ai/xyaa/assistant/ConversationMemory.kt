@@ -96,9 +96,9 @@ class ConversationMemory(context: Context) {
         val labels = listOf("password", "passcode", "api key", "access token", "refresh token",
             "bearer token", "one-time password", "secret key", "private key", "recovery code", "client secret")
         if (labels.any(lower::contains)) return true
-        if (Regex("""\\b(?:token|secret|credential|password|passwd|api[_ -]?key)\\s*[:=]\\s*\\S+""", RegexOption.IGNORE_CASE).containsMatchIn(value)) return true
+        if (Regex("\\b(?:token|secret|credential|password|passwd|api[_ -]?key)\\s*[:=]\\s*\\S+", RegexOption.IGNORE_CASE).containsMatchIn(value)) return true
         if (value.contains("-----BEGIN") && value.contains("PRIVATE KEY")) return true
-        return Regex("""\\b[A-Za-z0-9_-]{32,}\\b""").containsMatchIn(value)
+        return Regex("\\b[A-Za-z0-9_-]{32,}\\b").containsMatchIn(value)
     }
     private fun getKey(): SecretKey {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
