@@ -7,6 +7,8 @@ import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.graphics.Paint
 import android.graphics.pdf.PdfDocument
+import android.graphics.text.LineBreaker
+import android.annotation.SuppressLint
 import android.text.Layout
 import android.text.StaticLayout
 import android.text.TextPaint
@@ -804,6 +806,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         startActivityForResult(intent, 71)
     }
 
+    @SuppressLint("InlinedApi")
     private fun writePdf(uri: android.net.Uri) {
         val document = PdfDocument()
         val pageWidth = 595
@@ -879,7 +882,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 .setAlignment(Layout.Alignment.ALIGN_NORMAL)
                 .setIncludePad(false)
                 .setLineSpacing(3f, 1.0f)
-                .setBreakStrategy(Layout.BREAK_STRATEGY_HIGH_QUALITY)
+                .setBreakStrategy(LineBreaker.BREAK_STRATEGY_HIGH_QUALITY)
                 .setHyphenationFrequency(Layout.HYPHENATION_FREQUENCY_NORMAL)
                 .build()
             y += before
