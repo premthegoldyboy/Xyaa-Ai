@@ -41,8 +41,8 @@ These are parallel workstreams, not a serial roadmap. Shared interfaces and inte
 
 - Start with a versioned Room database in app-private storage; use Android Keystore-backed encryption for sensitive fields or an encrypted database solution selected after dependency/security review.
 - Define explicit retention and deletion semantics, including deletion of derived summaries when their source memory is deleted.
-- Keep cloud sync off by default. Any future sync must be opt-in, authenticated, and encrypted in transit and at rest.
-- Do not send the entire memory store to an AI provider. Retrieve only relevant, user-authorized snippets and provide a visible memory-use control.
+- Keep background cloud sync off by default. Any future sync must be opt-in, authenticated, and encrypted in transit and at rest.
+- Do not send the entire memory store to an AI provider. Retrieve only relevant, user-authorized snippets and disclose that matching memory and recent conversation context may accompany prompts to the configured provider.
 - Add migration tests and tests for consent, retrieval, correction, deletion, and pause mode.
 
 ## Parallel workstream B — Code Studio
