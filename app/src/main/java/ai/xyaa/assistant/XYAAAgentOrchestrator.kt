@@ -53,6 +53,7 @@ object XYAAAgentOrchestrator {
     fun isExplicitResearchRequest(prompt: String): Boolean {
         val lower = prompt.trim().lowercase(Locale.ROOT)
         if (lower.isBlank()) return false
+        if (Regex("\\b(trend|trending|community sentiment|what people are saying|last\\s+30\\s+days|past\\s+30\\s+days)\\b").containsMatchIn(lower)) return true
         if (Regex("\\b(research|investigate|compare|look\\s+up)\\b").containsMatchIn(lower) ||
             Regex("^\\s*google\\b").containsMatchIn(lower)) return true
         if (Regex("\\b(search(?:\\s+the)?\\s+web|web\\s+search|search\\s+for|find\\s+out\\s+about|look\\s+up)\\b")
