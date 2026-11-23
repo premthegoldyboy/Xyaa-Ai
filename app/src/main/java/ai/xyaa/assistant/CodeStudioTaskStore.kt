@@ -69,10 +69,10 @@ class CodeStudioTaskStore(context: Context) {
         updated
     }
 
-    fun setPlanningFailed(id: String): Task? = synchronized(lock) {
+    fun setPlanningFailed(id: String, expectedRequest: String? = null): Task? = synchronized(lock) {
         val tasks = readUnsafe().toMutableList()
         val index = tasks.indexOfFirst { it.id == id }
-        if (index < 0) return@synchronized null
+        if (index < 0 || (expectedRequest != null && tasks[index].request != expectedRequest)) return@synchronized null
         val updated = tasks[index].copy(status = "Planning failed · check provider settings", updatedAt = System.currentTimeMillis())
         tasks[index] = updated
         writeUnsafe(tasks)
