@@ -209,8 +209,8 @@ test('voice model archives are validated in staging before replacing installed m
 
 test('hidden protocol blocks are stripped before a spoken summary enters conversation memory', () => {
   const formatter = read('app/src/main/java/ai/xyaa/assistant/AssistantTextFormatter.kt');
-  assert.match(formatter, /val cleaned = forDisplay\(raw\)/);
-  assert.match(formatter, /spokenLine\.find\(cleaned\)/);
+  assert.match(formatter, /val safe = stripHiddenBlocks\(raw\)/);
+  assert.match(formatter, /spokenLine\.find\(safe\)/);
   assert.match(formatter, /Sanitize first/);
 });
 
@@ -220,4 +220,10 @@ test('forget-all clears both memory domains without re-saving its confirmation',
   assert.match(activity, /conversationMemory\.clear\(\)/);
   assert.match(activity, /recentMemory\.value = emptyList\(\)/);
   assert.match(activity, /if \(!clearAll\) rememberForRequest\("assistant", message\)/);
+});
+
+test('memory formatting keeps public SPOKEN summaries after hidden-block sanitization', () => {
+  const formatter = read('app/src/main/java/ai/xyaa/assistant/AssistantTextFormatter.kt');
+  assert.match(formatter, /val source = if \(spoken\.isNotBlank\(\)\) spoken else forDisplay\(safe\)/);
+  assert.match(formatter, /private fun stripHiddenBlocks\(raw: String\)/);
 });
