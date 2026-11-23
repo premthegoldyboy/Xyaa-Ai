@@ -66,12 +66,15 @@ class PersonalMemoryStore(context: Context) {
         if (index < 0) return@synchronized null
         val updated = items[index].copy(category = classify(cleaned), content = cleaned, updatedAt = System.currentTimeMillis())
         val duplicate = items.indexOfFirst { it.id != id && it.content.equals(cleaned, ignoreCase = true) }
-        if (duplicate >= 0) {
-            items[duplicate] = items[duplicate].copy(category = updated.category, updatedAt = updated.updatedAt)
-            items.removeAt(index)
-        } else items[index] = updated
+        val result = if (duplicate >= 0) {
+            // The edited fact already exists: merge into the surviving item and return its real ID.
+            items[duplicate].copy(category = updated.category, updatedAt = updated.updatedAt).also {
+                items[duplicate] = it
+                items.removeAt(index)
+            }
+        } else updated.also { items[index] = it }
         writeUnsafe(items)
-        updated
+        result
     }
 
     fun all(): List<Item> = synchronized(lock) { readUnsafe().sortedByDescending { it.updatedAt } }
