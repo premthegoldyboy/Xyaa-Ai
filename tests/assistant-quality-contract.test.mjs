@@ -138,3 +138,11 @@ test('explicit camera, settings, calendar, and website intents precede generic a
     assert.ok(skills.indexOf(route) < genericOpen, 'generic launcher steals route: ' + route);
   }
 });
+
+test('stale async requests cannot speak over newer replies or complete an old PDF export', () => {
+  const activity = read('app/src/main/java/ai/xyaa/assistant/MainActivity.kt');
+  assert.match(activity, /if \(requestSequence\.get\(\) != requestId\) return@runOnUiThread/);
+  assert.match(activity, /pendingPdfRequestId = requestId/);
+  assert.match(activity, /ownerRequest == requestSequence\.get\(\)/);
+  assert.match(activity, /openPdfPicker\(requestId\)/);
+});
