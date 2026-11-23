@@ -1003,10 +1003,14 @@ private fun MemoryPage(
                 Row(verticalAlignment=Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("PERSONAL MEMORY",color=Cyan,fontSize=9.sp,fontWeight=FontWeight.Bold,letterSpacing=1.4.sp)
-                        Text(if(paused) "Saving is paused" else "Encrypted on this device",color=Muted,fontSize=10.sp)
+                        Text(if(paused) "Saving is paused" else "Encrypted locally · no background cloud sync",color=Muted,fontSize=10.sp)
                     }
                     Switch(checked=!paused,onCheckedChange={setPaused(!it)})
                 }
+                Text(
+                    "When you chat with your configured AI provider, matching saved facts and recent conversation context may be sent with your prompt. XYAA does not run background memory sync.",
+                    color=Muted,fontSize=10.sp,lineHeight=14.sp
+                )
                 OutlinedTextField(
                     value=newFact,onValueChange={newFact=it.take(500)},modifier=Modifier.fillMaxWidth(),
                     placeholder={Text("Add a favourite, interest or plan…")},singleLine=false,maxLines=2,
@@ -1114,7 +1118,7 @@ private fun SettingsPage(
             TextButton(onClick={if(wake)stopWake() else startWake()}) { Text(if(wake)"Turn off" else "Turn on",color=Cyan) }
         })
         Spacer(Modifier.height(18.dp)); Label("PRIVACY & MEMORY")
-        InfoCard("Conversation memory","Recent turns are stored locally to provide context in future conversations.","LOCAL")
+        InfoCard("Conversation memory","Recent turns are stored locally. Relevant context may be sent with your prompt to the AI provider you configured when you chat.","LOCAL")
         OutlinedButton(onClick=clear,modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.outlinedButtonColors(contentColor=Color(0xFFFF8C9B))) {
             Text("Clear saved conversation memory")
         }
