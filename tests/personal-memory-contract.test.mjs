@@ -7,26 +7,26 @@ const activity = readFileSync(new URL('../app/src/main/java/ai/xyaa/assistant/Ma
 const ui = readFileSync(new URL('../app/src/main/java/ai/xyaa/assistant/XyaaPremiumUi.kt', import.meta.url), 'utf8');
 
 test('personal memory edits preserve the surviving identity when merging duplicates', () => {
-  assert.match(store, /fun update\\(id: String, content: String\\)/);
-  assert.match(store, /items\\[duplicate\\]\\.copy\\(category = updated\\.category, updatedAt = updated\\.updatedAt\\)/);
-  assert.match(store, /items\\.removeAt\\(index\\)/);
-  assert.match(store, /writeUnsafe\\(items\\)\\s+result/);
+  assert.match(store, /fun update\(id: String, content: String\)/);
+  assert.match(store, /items\[duplicate\]\.copy\(category = updated\.category, updatedAt = updated\.updatedAt\)/);
+  assert.match(store, /items\.removeAt\(index\)/);
+  assert.match(store, /writeUnsafe\(items\)\s+result/);
 });
 
 test('personal memory remains opt-in and paused memory cannot be added or edited', () => {
-  assert.match(store, /if \\(cleaned\\.isBlank\\(\\) \\|\\| isPaused\\(\\) \\|\\| containsCredentialLikeData\\(cleaned\\)\\)/);
-  assert.match(store, /fun setPaused\\(paused: Boolean\\)/);
+  assert.match(store, /if \(cleaned\.isBlank\(\) \|\| isPaused\(\) \|\| containsCredentialLikeData\(cleaned\)\)/);
+  assert.match(store, /fun setPaused\(paused: Boolean\)/);
   assert.match(activity, /rememberMatch/);
-  assert.match(activity, /personalMemoryStore\\.add/);
+  assert.match(activity, /personalMemoryStore\.add/);
   assert.match(ui, /onPausePersonalMemory/);
 });
 
 test('personal memory prompt context is relevance-filtered, bounded, and disabled while paused', () => {
-  assert.match(store, /fun contextForPrompt\\(query: String, limit: Int = 8\\)/);
-  assert.match(store, /if \\(isPaused\\(\\)\\) return@synchronized ""/);
-  assert.match(store, /ranked\\.filter \\{ it\\.second > 0 \\}\\.take\\(limit\\)/);
-  assert.match(store, /selected\\.joinToString\\("\\\\n"\\)/);
-  assert.match(store, /take\\(2400\\)/);
+  assert.match(store, /fun contextForPrompt\(query: String, limit: Int = 8\)/);
+  assert.match(store, /if \(isPaused\(\)\) return@synchronized ""/);
+  assert.match(store, /ranked\.filter \{ it\.second > 0 \}\.take\(limit\)/);
+  assert.match(store, /selected\.joinToString\("\\n"\)/);
+  assert.match(store, /take\(2400\)/);
 });
 
 test('personal memory rejects credential-like content before encryption', () => {
@@ -34,6 +34,6 @@ test('personal memory rejects credential-like content before encryption', () => 
     assert.ok(store.includes(phrase), 'missing credential filter: ' + phrase);
   }
   assert.match(store, /PRIVATE KEY/);
-  assert.match(store, /AES\\/GCM\\/NoPadding/);
+  assert.match(store, /AES\/GCM\/NoPadding/);
   assert.match(store, /AndroidKeyStore/);
 });
