@@ -119,3 +119,12 @@ test('microphone and notification permissions are checked at the component that 
   assert.match(wake, /checkSelfPermission\(this, android\.Manifest\.permission\.RECORD_AUDIO\)/);
   assert.match(reminder, /checkSelfPermission\(applicationContext, Manifest\.permission\.POST_NOTIFICATIONS\)/);
 });
+
+
+test('timer duration math cannot overflow and 12-hour alarms validate AM/PM hours', () => {
+  const skills = read('app/src/main/java/ai/xyaa/assistant/SkillEngine.kt');
+  assert.match(skills, /toLongOrNull\(\)/);
+  assert.match(skills, /Math\.multiplyExact\(amount, multiplier\)/);
+  assert.match(skills, /seconds !in 1L\.\.86400L/);
+  assert.match(skills, /suffix\.isNotBlank\(\) && hour !in 1\.\.12/);
+});
