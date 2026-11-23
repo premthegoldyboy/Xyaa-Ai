@@ -257,3 +257,13 @@ test('30-day research uses date-bounded retrieval, relevance, recency and public
   assert.match(research, /filterNot\(::isGamblingSource\)/);
   assert.match(research, /Derive a short summary from the/);
 });
+
+test('Code Studio worker never reads symlinked source, leaks API keys in URLs, or applies symlink patches', () => {
+  const worker = readFileSync(new URL('../scripts/code_studio_worker.py', import.meta.url), 'utf8');
+  assert.match(worker, /path\.is_symlink\(\)/);
+  assert.match(worker, /x-goog-api-key/);
+  assert.doesNotMatch(worker, /generateContent\?key=/);
+  assert.match(worker, /response\.read\(4 \* 1024 \* 1024 \+ 1\)/);
+  assert.match(worker, /mode != "100644"/);
+  assert.match(worker, /non-regular file mode/);
+});
