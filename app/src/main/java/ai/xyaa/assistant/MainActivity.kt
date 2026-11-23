@@ -774,7 +774,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                     sayForRequest("Your PDF is ready. Choose a location to save it.")
                 } else {
                     // Text streams during generation. Keep the completed answer visible while audio plays.
-                    val visibleAnswer = AssistantTextFormatter.forRichDisplay(response)
+                    val visibleAnswer = AssistantTextFormatter.forStreamingDisplay(response)
                         .ifBlank { "I couldn't produce a user-facing answer. Please try again." }
                     answer(visibleAnswer, true)
                     sayForRequest(visibleAnswer)
