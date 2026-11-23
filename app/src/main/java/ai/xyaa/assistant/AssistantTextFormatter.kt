@@ -204,8 +204,10 @@ internal object AssistantTextFormatter {
     /** A compact, faithful memory entry; spoken summaries take priority for long reports. */
     fun forMemory(raw: String): String {
         if (raw.isBlank()) return ""
-        val spoken = spokenLine.find(raw)?.groupValues?.getOrNull(1)?.trim().orEmpty()
-        val source = if (spoken.isNotBlank()) spoken else forDisplay(raw).substringBefore("\n\n")
+        // Sanitize first: a SPOKEN label inside an internal block must never be stored as a memory turn.
+        val cleaned = forDisplay(raw)
+        val spoken = spokenLine.find(cleaned)?.groupValues?.getOrNull(1)?.trim().orEmpty()
+        val source = if (spoken.isNotBlank()) spoken else cleaned.substringBefore("\n\n")
         return compact(source, 520)
     }
 
