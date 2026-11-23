@@ -10,11 +10,6 @@ const sw = readFileSync(new URL('../sw.js', import.meta.url), 'utf8');
 test('app document contains the XYAA identity and required controls', () => {
   assert.match(html, /<title>XYAA<\/title>/);
   for (const id of ['chat', 'mic', 'handsfree', 'composer', 'prefs', 'apiKey']) {
-  assert.match(store, /fun update\\(id: String, content: String\\)/);
-  assert.match(store, /items\\[duplicate\\]\\.copy\\(category = updated\\.category, updatedAt = updated\\.updatedAt\\)/);
-  assert.match(store, /items\\.removeAt\\(index\\)/);
-  assert.match(store, /ranked\\.filter \\{ it\\.second > 0 \\}\\.take\\(limit\\)/);
-  assert.match(store, /selected\\.joinToString/);
     assert.match(html, new RegExp('id="' + id + '"'));
   }
   assert.doesNotMatch(html, /\b(?:Jarvis|Nova)\b/i);
@@ -144,6 +139,11 @@ test('personal memory is encrypted, explicit, bounded, and independently control
   assert.match(store, /client secret/);
   assert.match(store, /PRIVATE KEY/);
   assert.match(store, /api\[_ -\]\?key/);
+  assert.match(store, /fun update\(id: String, content: String\)/);
+  assert.match(store, /items\[duplicate\]\.copy\(category = updated\.category, updatedAt = updated\.updatedAt\)/);
+  assert.match(store, /items\.removeAt\(index\)/);
+  assert.match(store, /ranked\.filter \{ it\.second > 0 \}\.take\(limit\)/);
+  assert.match(store, /selected\.joinToString/);
   assert.match(store, /safeCategory = category\.trim\(\)\.lowercase\(\)\.take\(32\)/);
   assert.match(activity, /rememberMatch/);
   assert.match(activity, /forgetMatch/);
