@@ -87,3 +87,14 @@ test('Gemini research filters prohibited source categories without shifting grou
   assert.match(research, /applyGroundingCitations\(raw, candidate, citationNumbers\)/);
   assert.match(research, /citationNumbers\[indices\.optInt\(it, -1\)\]/);
 });
+
+
+test('speech recognition submits the transcript through the same visible chat flow', () => {
+  const activity = read('app/src/main/java/ai/xyaa/assistant/MainActivity.kt');
+  const ui = read('app/src/main/java/ai/xyaa/assistant/XyaaPremiumUi.kt');
+  assert.match(activity, /onVoice = \{ onRecognized -> startVoiceInput\(onRecognized\) \}/);
+  assert.match(activity, /pendingVoiceRecognition\?\.invoke\(spoken\)/);
+  assert.match(activity, /startVoiceInput\(onRecognized: \(\(String\) -> Unit\)\? = null\)/);
+  assert.match(ui, /onVoice: \(\(String\) -> Unit\) -> Unit/);
+  assert.equal((ui.match(/onVoice \{ spoken -> submit\(spoken\) \}/g) || []).length, 3);
+});
