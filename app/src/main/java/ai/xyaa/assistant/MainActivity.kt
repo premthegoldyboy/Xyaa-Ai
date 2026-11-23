@@ -585,13 +585,21 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         val forgetMatch = Regex("(?i)^\\s*(?:please\\s+)?forget\\s+(.+)$").find(prompt)
         if (forgetMatch != null) {
             val target = forgetMatch.groupValues[1].trim()
-            val removed = if (Regex("(?i)\\b(everything|all|all my memories)\\b").containsMatchIn(target)) {
+            val clearAll = Regex("(?i)^(?:everything|all|all my memories|all memories|all my memory|all saved memory|all conversation memory)$").matches(target)
+            var clearedConversationTurns = 0
+            val removed = if (clearAll) {
                 val count = personalMemoryStore.all().size
+                clearedConversationTurns = conversationMemory.recentTurns().size
                 personalMemoryStore.clear()
+                conversationMemory.clear()
+                recentMemory.value = emptyList()
                 count
             } else personalMemoryStore.deleteMatching(target.removePrefix("that "))
             personalMemories.value = personalMemoryStore.all()
-            val message = if (removed > 0) "Forgot $removed saved personal memory item(s)." else "I couldn't find a saved personal memory matching that request."
+            val message = if (clearAll) {
+                "Cleared $removed personal memory item(s) and $clearedConversationTurns recent conversation turn(s)."
+            } else if (removed > 0) "Forgot $removed saved personal memory item(s)."
+            else "I couldn't find a saved personal memory matching that request."
             rememberForRequest("assistant", message)
             runOnUiThread { answer(message, true); sayForRequest(message) }
             return
