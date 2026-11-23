@@ -29,6 +29,9 @@ class NeuralVoiceEngine(private val context: Context, private val onStatus: (Str
     companion object {
         private const val MODEL_URL = "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-multi-lang-v1_0.tar.bz2"
         private const val MODEL_DIR = "kokoro-multi-lang-v1_0"
+        private const val MAX_ARCHIVE_BYTES = 512L * 1024 * 1024
+        private const val MAX_EXTRACTED_BYTES = 1024L * 1024 * 1024
+        private const val MAX_ARCHIVE_ENTRIES = 20000
     }
     private val modelRoot = File(context.filesDir, "neural-voice")
     private val modelDir = File(modelRoot, MODEL_DIR)
@@ -64,6 +67,7 @@ class NeuralVoiceEngine(private val context: Context, private val onStatus: (Str
                     connection.connect()
                     if (connection.responseCode !in 200..299) error("Model download failed: HTTP ${connection.responseCode}")
                     val total = connection.contentLengthLong
+                    require(total <= MAX_ARCHIVE_BYTES || total < 0L) { "Voice model archive exceeds the 512 MB download limit." }
                     connection.inputStream.use { input ->
                         FileOutputStream(archive).use { output ->
                             val buffer = ByteArray(131072)
@@ -74,6 +78,7 @@ class NeuralVoiceEngine(private val context: Context, private val onStatus: (Str
                                 if (count < 0) break
                                 output.write(buffer, 0, count)
                                 downloaded += count
+                                require(downloaded <= MAX_ARCHIVE_BYTES) { "Voice model archive exceeded the 512 MB download limit." }
                                 if (downloaded - lastUpdate >= 5L * 1024 * 1024) {
                                     val percent = if (total > 0) " (${downloaded * 100 / total}%)" else ""
                                     onStatus("Downloading neural voice: ${downloaded / (1024 * 1024)} MB${if (total > 0) " / ${total / (1024 * 1024)} MB" else ""}$percent")
@@ -357,23 +362,29 @@ class NeuralVoiceEngine(private val context: Context, private val onStatus: (Str
     ) {
         val root = destination.canonicalFile.toPath()
         var extracted = 0L
+        var entries = 0
         var lastUpdate = 0L
         TarArchiveInputStream(BZip2CompressorInputStream(BufferedInputStream(archive.inputStream()))).use { tar ->
             while (true) {
                 val entry = tar.nextTarEntry ?: break
+                entries++
+                require(entries <= MAX_ARCHIVE_ENTRIES) { "Voice model archive contains too many entries." }
+                require(!entry.isSymbolicLink && !entry.isLink) { "Links are not allowed in the voice model archive." }
                 val output = File(destination, entry.name).canonicalFile
                 require(output.toPath().startsWith(root)) { "Unsafe path in voice model archive" }
                 if (entry.isDirectory) {
                     output.mkdirs()
                 } else if (entry.isFile) {
+                    require(entry.size in 0..MAX_EXTRACTED_BYTES) { "Voice model archive entry is too large." }
                     output.parentFile?.mkdirs()
                     FileOutputStream(output).use { sink ->
                         val buffer = ByteArray(131072)
                         while (true) {
                             val count = tar.read(buffer)
                             if (count < 0) break
-                            sink.write(buffer, 0, count)
                             extracted += count
+                            require(extracted <= MAX_EXTRACTED_BYTES) { "Voice model expands beyond the 1 GB installation limit." }
+                            sink.write(buffer, 0, count)
                             if (extracted - lastUpdate >= 8L * 1024 * 1024) {
                                 onProgress(extracted, entry.name)
                                 lastUpdate = extracted
