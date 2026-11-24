@@ -287,6 +287,19 @@ test('wake detection opens a foreground voice dialog and notification tap starts
   assert.match(ui, /End voice/);
 });
 
+
+test('wake word remains armed across a voice session and automatically re-arms after it closes', () => {
+  const activity = read('app/src/main/java/ai/xyaa/assistant/MainActivity.kt');
+  assert.match(activity, /wakeWordArmed = mutableStateOf\(false\)/);
+  assert.match(activity, /putBoolean\("wake_word_armed", true\)/);
+  assert.match(activity, /private fun pauseWakeWordForVoice\(\)/);
+  assert.match(activity, /private fun rearmWakeWordIfNeeded\(\)/);
+  assert.match(activity, /if \(activityVisible\) startWakeWordService\(\)/);
+  assert.match(activity, /rearmWakeWordIfNeeded\(\)/);
+  assert.match(activity, /if \(wakeWordArmed\.value && !wakeVoiceLaunchPending && !liveVoiceActive\.value\)/);
+  assert.match(activity, /putBoolean\("wake_word_armed", false\)/);
+});
+
 test('external intents are launched without package-visibility preflight false negatives', () => {
   const skills = read('app/src/main/java/ai/xyaa/assistant/SkillEngine.kt');
   const management = read('app/src/main/java/ai/xyaa/assistant/ManagementAgent.kt');
