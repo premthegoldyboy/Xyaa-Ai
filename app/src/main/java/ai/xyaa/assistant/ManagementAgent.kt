@@ -40,7 +40,6 @@ class ManagementAgent(context: Context) {
             )
         }
         val name = queryName(uri) ?: fallbackName
-        val records = readPdfs()
         upsertPdf(uri, name)
     }
 
@@ -58,10 +57,11 @@ class ManagementAgent(context: Context) {
 
     /** Index PDFs in a user-selected folder tree using Android's scoped document access. */
     fun importPdfFolder(treeUri: Uri): Int {
-        app.contentResolver.takePersistableUriPermission(
-            treeUri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-        )
-        val rootId = DocumentsContract.getTreeDocumentId(treeUri)
+        // Folder indexing only reads documents; asking for write access can fail on read-only grants.
+        runCatching {
+            app.contentResolver.takePersistableUriPermission(treeUri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        val rootId = runCatching { DocumentsContract.getTreeDocumentId(treeUri) }.getOrNull() ?: return 0
         val pending = ArrayDeque<Pair<String, Int>>()
         pending.add(rootId to 0)
         val visited = HashSet<String>()
@@ -71,20 +71,25 @@ class ManagementAgent(context: Context) {
             if (!visited.add(parentId) || depth > 8) continue
             val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentId)
             val columns = arrayOf(Document.COLUMN_DOCUMENT_ID, Document.COLUMN_DISPLAY_NAME, Document.COLUMN_MIME_TYPE)
-            app.contentResolver.query(childrenUri, columns, null, null, null)?.use { cursor ->
-                val idCol = cursor.getColumnIndexOrThrow(Document.COLUMN_DOCUMENT_ID)
-                val nameCol = cursor.getColumnIndexOrThrow(Document.COLUMN_DISPLAY_NAME)
-                val mimeCol = cursor.getColumnIndexOrThrow(Document.COLUMN_MIME_TYPE)
-                while (cursor.moveToNext()) {
-                    val id = cursor.getString(idCol) ?: continue
-                    val name = cursor.getString(nameCol).orEmpty()
-                    val mime = cursor.getString(mimeCol).orEmpty()
-                    if (mime == Document.MIME_TYPE_DIR) {
-                        if (depth < 8) pending.add(id to depth + 1)
-                    } else if (mime.equals("application/pdf", true) || name.endsWith(".pdf", true)) {
-                        val documentUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, id)
-                        upsertPdf(documentUri, name.ifBlank { "Document.pdf" })
-                        imported++
+            // A provider may fail for one folder or return an incomplete cursor. Skip that
+            // folder rather than aborting the whole import or losing already indexed files.
+            runCatching {
+                app.contentResolver.query(childrenUri, columns, null, null, null)?.use { cursor ->
+                    val idCol = cursor.getColumnIndex(Document.COLUMN_DOCUMENT_ID)
+                    val nameCol = cursor.getColumnIndex(Document.COLUMN_DISPLAY_NAME)
+                    val mimeCol = cursor.getColumnIndex(Document.COLUMN_MIME_TYPE)
+                    if (idCol < 0 || nameCol < 0 || mimeCol < 0) return@use
+                    while (cursor.moveToNext()) {
+                        val id = cursor.getString(idCol) ?: continue
+                        val name = cursor.getString(nameCol).orEmpty()
+                        val mime = cursor.getString(mimeCol).orEmpty()
+                        if (mime == Document.MIME_TYPE_DIR) {
+                            if (depth < 8) pending.add(id to depth + 1)
+                        } else if (mime.equals("application/pdf", true) || name.endsWith(".pdf", true)) {
+                            val documentUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, id)
+                            runCatching { upsertPdf(documentUri, name.ifBlank { "Document.pdf" }) }
+                                .onSuccess { imported++ }
+                        }
                     }
                 }
             }
