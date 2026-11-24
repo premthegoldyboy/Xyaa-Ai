@@ -40,7 +40,6 @@ class ManagementAgent(context: Context) {
             )
         }
         val name = queryName(uri) ?: fallbackName
-        val records = readPdfs()
         upsertPdf(uri, name)
     }
 
@@ -58,10 +57,11 @@ class ManagementAgent(context: Context) {
 
     /** Index PDFs in a user-selected folder tree using Android's scoped document access. */
     fun importPdfFolder(treeUri: Uri): Int {
-        app.contentResolver.takePersistableUriPermission(
-            treeUri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-        )
-        val rootId = DocumentsContract.getTreeDocumentId(treeUri)
+        // Folder indexing only reads documents; asking for write access can fail on read-only grants.
+        runCatching {
+            app.contentResolver.takePersistableUriPermission(treeUri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        val rootId = runCatching { DocumentsContract.getTreeDocumentId(treeUri) }.getOrNull() ?: return 0
         val pending = ArrayDeque<Pair<String, Int>>()
         pending.add(rootId to 0)
         val visited = HashSet<String>()
@@ -71,20 +71,25 @@ class ManagementAgent(context: Context) {
             if (!visited.add(parentId) || depth > 8) continue
             val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentId)
             val columns = arrayOf(Document.COLUMN_DOCUMENT_ID, Document.COLUMN_DISPLAY_NAME, Document.COLUMN_MIME_TYPE)
-            app.contentResolver.query(childrenUri, columns, null, null, null)?.use { cursor ->
-                val idCol = cursor.getColumnIndexOrThrow(Document.COLUMN_DOCUMENT_ID)
-                val nameCol = cursor.getColumnIndexOrThrow(Document.COLUMN_DISPLAY_NAME)
-                val mimeCol = cursor.getColumnIndexOrThrow(Document.COLUMN_MIME_TYPE)
-                while (cursor.moveToNext()) {
-                    val id = cursor.getString(idCol) ?: continue
-                    val name = cursor.getString(nameCol).orEmpty()
-                    val mime = cursor.getString(mimeCol).orEmpty()
-                    if (mime == Document.MIME_TYPE_DIR) {
-                        if (depth < 8) pending.add(id to depth + 1)
-                    } else if (mime.equals("application/pdf", true) || name.endsWith(".pdf", true)) {
-                        val documentUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, id)
-                        upsertPdf(documentUri, name.ifBlank { "Document.pdf" })
-                        imported++
+            // A provider may fail for one folder or return an incomplete cursor. Skip that
+            // folder rather than aborting the whole import or losing already indexed files.
+            runCatching {
+                app.contentResolver.query(childrenUri, columns, null, null, null)?.use { cursor ->
+                    val idCol = cursor.getColumnIndex(Document.COLUMN_DOCUMENT_ID)
+                    val nameCol = cursor.getColumnIndex(Document.COLUMN_DISPLAY_NAME)
+                    val mimeCol = cursor.getColumnIndex(Document.COLUMN_MIME_TYPE)
+                    if (idCol < 0 || nameCol < 0 || mimeCol < 0) return@use
+                    while (cursor.moveToNext()) {
+                        val id = cursor.getString(idCol) ?: continue
+                        val name = cursor.getString(nameCol).orEmpty()
+                        val mime = cursor.getString(mimeCol).orEmpty()
+                        if (mime == Document.MIME_TYPE_DIR) {
+                            if (depth < 8) pending.add(id to depth + 1)
+                        } else if (mime.equals("application/pdf", true) || name.endsWith(".pdf", true)) {
+                            val documentUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, id)
+                            runCatching { upsertPdf(documentUri, name.ifBlank { "Document.pdf" }) }
+                                .onSuccess { imported++ }
+                        }
                     }
                 }
             }
@@ -108,7 +113,7 @@ class ManagementAgent(context: Context) {
 
         if (Regex("(?i)^(?:show|list|view|read)(?:\\s+all)?\\s+(?:my\\s+)?notes$|^(?:my\\s+notes|notes)$").matches(text)) {
             if (notes.length() == 0) return "Your notes are empty."
-            return "Your saved notes ( ${notes.length()} ):\\n" + (0 until notes.length()).joinToString("\\n") { i ->
+            return "Your saved notes ( ${notes.length()} ):\n" + (0 until notes.length()).joinToString("\n") { i ->
                 "${i + 1}. ${notes.getJSONObject(i).optString("text")}"
             }
         }
@@ -119,7 +124,7 @@ class ManagementAgent(context: Context) {
             val found = (0 until notes.length()).map { notes.getJSONObject(it).optString("text") }
                 .filter { it.contains(query, true) }
             return if (found.isEmpty()) "I couldn't find a note matching “$query”." else
-                "Notes matching “$query”:\\n" + found.mapIndexed { i, s -> "${i + 1}. $s" }.joinToString("\\n")
+                "Notes matching “$query”:\n" + found.mapIndexed { i, s -> "${i + 1}. $s" }.joinToString("\n")
         }
 
         val deleteIndex = Regex("(?i)^(?:delete|remove)\\s+note\\s+#?(\\d+)$").find(text)
@@ -164,7 +169,7 @@ class ManagementAgent(context: Context) {
         val records = readPdfs()
         if (Regex("(?i)^(?:show|list|view)(?:\\s+all)?\\s+(?:my\\s+)?pdfs$|^(?:my\\s+pdfs|pdf library|show my documents)$").matches(text)) {
             if (records.length() == 0) return "Your XYAA PDF library is empty. PDFs you create and save through XYAA will appear here."
-            return "Your saved PDFs:\\n" + (0 until records.length()).joinToString("\\n") { i ->
+            return "Your saved PDFs:\n" + (0 until records.length()).joinToString("\n") { i ->
                 "${i + 1}. ${records.getJSONObject(i).optString("name")}"
             }
         }
@@ -175,7 +180,7 @@ class ManagementAgent(context: Context) {
             val matches = (0 until records.length()).map { records.getJSONObject(it) }
                 .filter { it.optString("name").contains(query, true) }
             return if (matches.isEmpty()) "I couldn't find a saved PDF matching “$query”." else
-                "Matching PDFs:\\n" + matches.mapIndexed { i, item -> "${i + 1}. ${item.optString("name")}" }.joinToString("\\n")
+                "Matching PDFs:\n" + matches.mapIndexed { i, item -> "${i + 1}. ${item.optString("name")}" }.joinToString("\n")
         }
 
         val delete = Regex("(?i)^(?:delete|remove)\\s+(?:the\\s+)?pdf\\s+(.+)$").find(text)
@@ -215,9 +220,14 @@ class ManagementAgent(context: Context) {
         val intent = Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse(item.optString("uri")), "application/pdf")
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
         return runCatching {
-            if (intent.resolveActivity(app.packageManager) == null) "No PDF viewer is available on this device."
-            else { app.startActivity(intent); "Opening ${item.optString("name")}." }
-        }.getOrElse { "I couldn't open that PDF: ${it.message ?: "viewer unavailable"}" }
+            // Let Android resolve the content URI directly; package-visibility preflights can
+            // incorrectly report that no PDF viewer exists even when one is installed.
+            app.startActivity(intent)
+            "Opening ${item.optString("name")}."
+        }.getOrElse { error ->
+            if (error is android.content.ActivityNotFoundException) "No PDF viewer is available on this device."
+            else "I couldn't open that PDF: ${error.message ?: "viewer unavailable"}"
+        }
     }
 
     private fun renamePdf(oldName: String, newNameRaw: String, records: JSONArray): String {
@@ -261,7 +271,7 @@ class ManagementAgent(context: Context) {
         You are XYAA's file-and-notes management planner. Convert the user's request into exactly one JSON object.
         User request: "$userRequest"
         Allowed actions:
-        save_note {text}; list_notes {}; search_notes {query}; edit_note {number, text};
+        save_note {text}; list_notes {}; search_notes {query}; edit_note {number or query, text};
         delete_note {number or query}; clear_notes {};
         list_pdfs {}; search_pdfs {query}; open_pdf {query}; rename_pdf {query, new_name};
         delete_pdf {query}; clarify {question}.
@@ -277,25 +287,48 @@ class ManagementAgent(context: Context) {
         val text = plan.optString("text").trim()
         val number = plan.optInt("number", -1)
         val original = originalRequest.lowercase(Locale.ROOT)
+        val explicitNoteNumber = Regex("\\bnote\\s+#?(\\d+)\\b").find(original)?.groupValues?.get(1)?.toIntOrNull()
+        val queryWasNamed = query.isNotBlank() && original.contains(query.lowercase(Locale.ROOT))
         return when (action) {
             "save_note" -> if (text.isNotBlank()) execute("save note: $text") else "What should I write in the note?"
             "list_notes" -> execute("show my notes")
-            "search_notes" -> if (query.isNotBlank()) execute("search notes for $query") else "What should I search for?"
-            "edit_note" -> if (number > 0 && text.isNotBlank()) execute("edit note #$number to $text") else "Tell me which note number to edit and its replacement."
+            "search_notes" -> if (queryWasNamed) execute("search notes for $query") else "What should I search for?"
+            "edit_note" -> {
+                if (text.isBlank()) "What should the replacement note say?"
+                else if (explicitNoteNumber != null) {
+                    if (number == explicitNoteNumber) execute("edit note #$number to $text")
+                    else "I could not verify the note number from your request. Please specify the exact note number."
+                } else if (queryWasNamed) {
+                    val notes = readNotes()
+                    val matches = (0 until notes.length()).filter { notes.getJSONObject(it).optString("text").contains(query, true) }
+                    if (matches.size == 1) execute("edit note #${matches.single() + 1} to $text")
+                    else if (matches.isEmpty()) "I could not find a note matching that description."
+                    else "I found multiple matching notes. Please specify the note number so I do not edit the wrong one."
+                } else "Please identify the note by its exact number or a phrase from its contents."
+            }
             "delete_note" -> {
-                if (!Regex("\\b(delete|remove)\\b").containsMatchIn(original)) "I won't delete a note unless you explicitly ask me to."
-                else if (number > 0) execute("delete note #$number")
-                else if (query.isNotBlank()) execute("delete note about $query")
-                else "Which note should I delete?"
+                if (!Regex("\\b(delete|remove)\\b").containsMatchIn(original)) "I will not delete a note unless you explicitly ask me to."
+                else if (explicitNoteNumber != null) {
+                    if (number == explicitNoteNumber) execute("delete note #$number")
+                    else "I could not verify the note number from your request. Please specify the exact note number."
+                } else if (queryWasNamed) execute("delete note about $query")
+                else "Please identify the note by its exact number or a phrase from its contents."
             }
             "clear_notes" -> if (Regex("\\b(clear|delete|remove)\\s+(all|every)\\b").containsMatchIn(original)) execute("clear my notes")
                 else "Please explicitly say “clear all my notes” before I remove every note."
             "list_pdfs" -> execute("list my PDFs")
-            "search_pdfs" -> if (query.isNotBlank()) execute("search PDFs for $query") else "What should I search for?"
-            "open_pdf" -> if (query.isNotBlank()) execute("open PDF $query") else "Which PDF should I open?"
-            "rename_pdf" -> if (query.isNotBlank() && plan.optString("new_name").isNotBlank()) execute("rename PDF $query to ${plan.optString("new_name")}") else "Tell me the PDF and its new filename."
-            "delete_pdf" -> if (Regex("\\b(delete|remove)\\b").containsMatchIn(original) && query.isNotBlank()) execute("delete PDF $query")
-                else "I need an explicit delete request and an identifiable PDF filename."
+            "search_pdfs" -> if (queryWasNamed) execute("search PDFs for $query") else "What should I search for?"
+            "open_pdf" -> if (queryWasNamed) execute("open PDF $query") else "Please name the PDF you want to open."
+            "rename_pdf" -> {
+                val newName = plan.optString("new_name").trim()
+                val normalizedNewName = newName.removeSuffix(".pdf").lowercase(Locale.ROOT)
+                val newNameWasNamed = normalizedNewName.isNotBlank() && original.contains(normalizedNewName)
+                if (Regex("\\brename\\b").containsMatchIn(original) && queryWasNamed && newNameWasNamed)
+                    execute("rename PDF $query to $newName")
+                else "Please specify both the existing PDF filename and its new name."
+            }
+            "delete_pdf" -> if (Regex("\\b(delete|remove)\\b").containsMatchIn(original) && queryWasNamed) execute("delete PDF $query")
+                else "I need an explicit delete request and a PDF filename that appears in your request."
             "clarify" -> plan.optString("question").ifBlank { "Which note or PDF do you mean?" }
             else -> null
         }

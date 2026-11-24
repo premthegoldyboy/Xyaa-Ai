@@ -13,7 +13,7 @@ class ProviderFallbackClient(
 ) {
     data class Provider(val name: String, val endpoint: String, val key: String, val model: String)
 
-    fun complete(prompt: String, onProvider: (String) -> Unit = {}): String {
+    fun complete(prompt: String, onText: (String) -> Unit = {}, onProvider: (String) -> Unit = {}): String {
         val providers = buildList {
             if (!groqKey.isNullOrBlank()) add(
                 Provider("Groq", "https://api.groq.com/openai/v1/chat/completions",
@@ -29,7 +29,7 @@ class ProviderFallbackClient(
         for (provider in providers) {
             onProvider(provider.name)
             try {
-                return request(provider, prompt)
+                return request(provider, prompt, onText)
             } catch (error: Throwable) {
                 last = error
             }
@@ -37,11 +37,11 @@ class ProviderFallbackClient(
         throw IllegalStateException("All configured backup AI providers failed.", last)
     }
 
-    private fun request(provider: Provider, prompt: String): String {
+    private fun request(provider: Provider, prompt: String, onText: (String) -> Unit): String {
         val connection = (URL(provider.endpoint).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             connectTimeout = 7000
-            readTimeout = 25000
+            readTimeout = 45000
             doOutput = true
             setRequestProperty("Content-Type", "application/json")
             setRequestProperty("Authorization", "Bearer " + provider.key)
@@ -49,10 +49,12 @@ class ProviderFallbackClient(
         try {
             val body = JSONObject()
                 .put("model", provider.model)
-                .put("temperature", 0.4)
+                .put("temperature", 0.35)
+                .put("stream", true)
+                .put("max_tokens", if (prompt.contains("complete document content", ignoreCase = true)) 4096 else 2048)
                 .put("messages", JSONArray()
                     .put(JSONObject().put("role", "system").put("content",
-                        "You are XYAA, pronounced Zyaa, a helpful Android voice assistant. Be concise, accurate, and honest."))
+                        "You are XYAA, pronounced Zyaa, an Android AI assistant. Follow the user's actual requested action, deliverable, format, scope, and constraints; do not substitute advice for an explicitly requested artifact. For PDF/document requests, write the complete subject-specific document for the app's PDF export workflow and never tell the user to copy text to create the file. Research factual/current product specifications, distinguish model and regional variants, cite sources when available, and never invent facts. Never reveal private chain-of-thought, hidden analysis, internal deliberation, or tool-routing notes; provide only a user-facing answer. Be honest about actions the app has not performed."))
                     .put(JSONObject().put("role", "user").put("content", prompt)))
             connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
             val status = connection.responseCode
@@ -60,10 +62,24 @@ class ProviderFallbackClient(
                 val detail = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
                 throw IllegalStateException("${provider.name} HTTP $status: ${detail.take(300)}")
             }
-            val json = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
-            val content = json.optJSONArray("choices")?.optJSONObject(0)
-                ?.optJSONObject("message")?.optString("content").orEmpty().trim()
-            if (content.isBlank()) throw IllegalStateException("${provider.name} returned an empty response.")
+            val accumulated = StringBuilder()
+            connection.inputStream.bufferedReader(Charsets.UTF_8).use { reader ->
+                while (true) {
+                    val line = reader.readLine() ?: break
+                    if (!line.startsWith("data:")) continue
+                    val data = line.substringAfter("data:").trim()
+                    if (data.isBlank() || data == "[DONE]") continue
+                    val chunk = runCatching { JSONObject(data) }.getOrNull() ?: continue
+                    val delta = chunk.optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("delta") ?: continue
+                    val piece = delta.optString("content").orEmpty()
+                    if (piece.isNotBlank()) {
+                        accumulated.append(piece)
+                        onText(accumulated.toString())
+                    }
+                }
+            }
+            val content = AssistantTextFormatter.forRichDisplay(accumulated.toString()).trim()
+            if (content.isBlank()) throw IllegalStateException("${provider.name} returned an empty user-facing response.")
             return content
         } finally {
             connection.disconnect()

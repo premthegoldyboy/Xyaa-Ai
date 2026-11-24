@@ -15,8 +15,12 @@ class SkillEngine(private val context: Context) {
     private val prefs = context.getSharedPreferences("xyaa_notes", Context.MODE_PRIVATE)
 
     fun execute(raw: String): String? {
-        val text = raw.trim()
-        val lower = text.lowercase(Locale.getDefault())
+        var text = raw.trim()
+        repeat(2) {
+            text = text.replace(Regex("(?i)^hey\\s+(?:xyaa|zyaa)[, ]+"), "")
+                .replace(Regex("(?i)^(?:please\\s+|can you\\s+|could you\\s+|would you\\s+)+"), "")
+        }
+        val lower = text.lowercase(Locale.ROOT)
 
         if (lower.matches(Regex("^(hi|hello|hey|hey xyaa|hey zyaa)[!. ]*$"))) return "Hey! What can I help you with?"
         if (lower.contains("what time") || lower == "time" || lower == "current time") {
@@ -78,15 +82,17 @@ class SkillEngine(private val context: Context) {
 
         val timer = Regex("^(?:set )?(?:a )?timer for (\\d+)\\s*(seconds?|secs?|minutes?|mins?|hours?|hrs?)$", RegexOption.IGNORE_CASE).find(text)
         if (timer != null) {
-            val amount = timer.groupValues[1].toIntOrNull() ?: return "That timer duration is too large."
+            val amount = timer.groupValues[1].toLongOrNull() ?: return "That timer duration is too large."
             val unit = timer.groupValues[2].lowercase()
-            val seconds = when {
-                unit.startsWith("hour") || unit.startsWith("hr") -> amount * 3600
-                unit.startsWith("min") -> amount * 60
-                else -> amount
+            val multiplier = when {
+                unit.startsWith("hour") || unit.startsWith("hr") -> 3600L
+                unit.startsWith("min") -> 60L
+                else -> 1L
             }
-            if (seconds !in 1..86400) return "Choose a timer between 1 second and 24 hours."
-            return launch(Intent(AlarmClock.ACTION_SET_TIMER).putExtra(AlarmClock.EXTRA_LENGTH, seconds).putExtra(AlarmClock.EXTRA_SKIP_UI, false), "Opening the timer.")
+            val seconds = runCatching { Math.multiplyExact(amount, multiplier) }.getOrNull()
+                ?: return "That timer duration is too large."
+            if (seconds !in 1L..86400L) return "Choose a timer between 1 second and 24 hours."
+            return launch(Intent(AlarmClock.ACTION_SET_TIMER).putExtra(AlarmClock.EXTRA_LENGTH, seconds.toInt()).putExtra(AlarmClock.EXTRA_SKIP_UI, false), "Opening the timer.")
         }
 
         val alarm = Regex("^(?:set )?(?:an )?alarm for (\\d{1,2})(?::(\\d{2}))?\\s*(am|pm)?$", RegexOption.IGNORE_CASE).find(text)
@@ -94,14 +100,12 @@ class SkillEngine(private val context: Context) {
             var hour = alarm.groupValues[1].toInt()
             val minute = alarm.groupValues[2].ifBlank { "0" }.toInt()
             val suffix = alarm.groupValues[3].lowercase()
+            if (suffix.isNotBlank() && hour !in 1..12) return "For AM or PM, choose an hour from 1 to 12."
             if (suffix == "pm" && hour < 12) hour += 12
             if (suffix == "am" && hour == 12) hour = 0
             if (hour !in 0..23 || minute !in 0..59) return "That alarm time doesn't look valid."
             return launch(Intent(AlarmClock.ACTION_SET_ALARM).putExtra(AlarmClock.EXTRA_HOUR, hour).putExtra(AlarmClock.EXTRA_MINUTES, minute), "Opening the alarm screen.")
         }
-
-        val open = Regex("^(?:please )?(?:open|launch|start) (.+?)[.!?]?$", RegexOption.IGNORE_CASE).find(text)
-        if (open != null) return openApp(open.groupValues[1].trim().removeSurrounding("\"").removeSurrounding("'"))
 
         val search = Regex("^(?:search(?: for)?|google) (.+)$", RegexOption.IGNORE_CASE).find(text)
         if (search != null) return webSearch(search.groupValues[1])
@@ -112,7 +116,23 @@ class SkillEngine(private val context: Context) {
         val map = Regex("^(?:directions to|navigate to|find on maps) (.+)$", RegexOption.IGNORE_CASE).find(text)
         if (map != null) return launch(Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=" + Uri.encode(map.groupValues[1]))), "Opening directions.")
         val call = Regex("^(?:call|phone) (.+)$", RegexOption.IGNORE_CASE).find(text)
-        if (call != null) return launch(Intent(Intent.ACTION_DIAL).setData(Uri.parse("tel:")), "Opening the dialler. Choose the contact there to continue.")
+        if (call != null) {
+            val target = call.groupValues[1].trim()
+            val number = target.filter { it.isDigit() || it == '+' }
+            return if (number.length >= 5 && target.all { it.isDigit() || it in "+- ()" }) {
+                launch(Intent(Intent.ACTION_DIAL).setData(Uri.parse("tel:" + Uri.encode(number))), "Opening the dialler with the number. Review it and tap Call.")
+            } else {
+                launch(Intent(Intent.ACTION_VIEW, Uri.parse("content://contacts/people/")), "Opening contacts. Choose $target there; XYAA will not place a call automatically.")
+            }
+        }
+        if ((lower.startsWith("turn on ") || lower.startsWith("turn off ") || lower.startsWith("enable ") || lower.startsWith("disable ")) &&
+            (lower.contains("wifi") || lower.contains("wi-fi"))) {
+            return launch(Intent(Settings.ACTION_WIFI_SETTINGS), "Opening Wi-Fi settings. Android will let you confirm the change.")
+        }
+        if ((lower.startsWith("turn on ") || lower.startsWith("turn off ") || lower.startsWith("enable ") || lower.startsWith("disable ")) &&
+            lower.contains("bluetooth")) {
+            return launch(Intent(Settings.ACTION_BLUETOOTH_SETTINGS), "Opening Bluetooth settings. Android will let you confirm the change.")
+        }
         if (lower in listOf("open settings", "phone settings", "device settings")) return launch(Intent(Settings.ACTION_SETTINGS), "Opening device settings.")
         if (lower.contains("bluetooth settings")) return launch(Intent(Settings.ACTION_BLUETOOTH_SETTINGS), "Opening Bluetooth settings.")
         if (lower.contains("wifi settings") || lower.contains("wi-fi settings")) return launch(Intent(Settings.ACTION_WIFI_SETTINGS), "Opening Wi-Fi settings.")
@@ -128,10 +148,21 @@ class SkillEngine(private val context: Context) {
         if (lower.startsWith("translate ")) return webSearch(text)
         if (lower.startsWith("news")) return webSearch("latest news")
         if (lower.startsWith("open website ")) {
-            val host = text.substringAfter("open website ").trim()
-            val url = if (host.startsWith("http")) host else "https://$host"
-            return launch(Intent(Intent.ACTION_VIEW, Uri.parse(url)), "Opening website.")
+            val requested = text.substringAfter("open website ").trim()
+            if (requested.isBlank() || requested.any { it.isWhitespace() || it.isISOControl() }) {
+                return "Please provide a valid website address."
+            }
+            val candidate = if (requested.contains("://")) requested else "https://$requested"
+            val address = runCatching { Uri.parse(candidate) }.getOrNull()
+            val scheme = address?.scheme?.lowercase(Locale.ROOT)
+            if (address == null || scheme !in setOf("http", "https") ||
+                address.host.isNullOrBlank() || address.userInfo != null) {
+                return "Please use a valid website address beginning with https:// or http://."
+            }
+            return launch(Intent(Intent.ACTION_VIEW, address), "Opening website.")
         }
+        val open = Regex("^(?:please )?(?:open|launch|start) (.+?)[.!?]?$", RegexOption.IGNORE_CASE).find(text)
+        if (open != null) return openApp(open.groupValues[1].trim())
         return null
     }
 
@@ -146,8 +177,11 @@ class SkillEngine(private val context: Context) {
             .filter { it.loadLabel(context.packageManager).toString().contains(requested, true) }
             .distinctBy { it.activityInfo.packageName }
         if (matches.size == 1) {
-            val label = matches.first().loadLabel(context.packageManager).toString()
-            return launch(context.packageManager.getLaunchIntentForPackage(matches.first().activityInfo.packageName)!!, "Opening $label.")
+            val match = matches.first()
+            val label = match.loadLabel(context.packageManager).toString()
+            val resolvedLaunchIntent = context.packageManager.getLaunchIntentForPackage(match.activityInfo.packageName)
+                ?: return "That app is no longer available. Please try again."
+            return launch(resolvedLaunchIntent, "Opening $label.")
         }
         if (matches.size > 1) return "I found several apps matching $requested. Please be more specific."
         return "I couldn't find an installed app named $requested."
@@ -155,9 +189,14 @@ class SkillEngine(private val context: Context) {
 
     private fun launch(intent: Intent, success: String): String = try {
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        if (intent.resolveActivity(context.packageManager) == null) "That feature isn't available on this device."
-        else { context.startActivity(intent); success }
-    } catch (_: Exception) { "Android couldn't open that feature." }
+        // Avoid resolveActivity preflights: package visibility can hide valid handlers.
+        context.startActivity(intent)
+        success
+    } catch (_: android.content.ActivityNotFoundException) {
+        "That feature isn't available on this device."
+    } catch (_: Exception) {
+        "Android couldn't open that feature."
+    }
 }
 
 private object Arithmetic {

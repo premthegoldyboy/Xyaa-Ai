@@ -5,6 +5,9 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+permissions:
+  contents: read
+
 jobs:
   assemble:
     runs-on: ubuntu-latest
@@ -24,7 +27,12 @@ jobs:
         with:
           packages: "platform-tools platforms;android-35 build-tools;35.0.0"
       - name: Build debug APK
-        run: gradle assembleDebug
+        run: gradle lintDebug testDebugUnitTest assembleDebug
+      - name: Print Android lint diagnostics
+        if: always()
+        run: |
+          report=app/build/intermediates/lint_intermediate_text_report/debug/lintReportDebug/lint-results-debug.txt
+          if [ -f "$report" ]; then cat "$report"; else echo "No lint text report was generated."; fi
       - uses: actions/upload-artifact@v4
         with:
           name: xyaa-debug-apk

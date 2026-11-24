@@ -93,7 +93,7 @@ class GeminiLiveVoiceSession(
                                 JSONObject().put("prebuiltVoiceConfig", JSONObject().put("voiceName", "Kore")))))
                         .put("systemInstruction", JSONObject().put("parts",
                             org.json.JSONArray().put(JSONObject().put("text",
-                                "You are XYAA, pronounced Zyaa, a friendly and concise Android voice assistant. Speak naturally and clearly. Be honest about actions and capabilities."))))
+                                "You are XYAA, pronounced Zyaa, a helpful, precise Android voice assistant with a playful, upbeat, warmly feminine conversational style. Sound naturally witty, curious, encouraging, and expressive; use light humor only when it fits, and never force jokes or act childish. Speak with a bright, friendly, youthful energy, natural pacing, clear pronunciation, and varied but comfortable intonation. Keep simple replies concise and serious or sensitive replies calm, respectful, and clear. Match the user's energy without mocking, flirting, or pretending to be human. Do not routinely introduce yourself or repeat your name. Answer directly, be honest about uncertainty, actions, and capabilities, and never claim to have done something you did not do."))))
                         .put("inputAudioTranscription", JSONObject())
                         .put("outputAudioTranscription", JSONObject()))
                 if (!webSocket.send(setup.toString())) {
@@ -107,7 +107,7 @@ class GeminiLiveVoiceSession(
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                onStatus("Live voice connection failed: ${t.message ?: "network error"}")
+                if (!stopped.get()) onStatus("Live voice connection failed: ${t.message ?: "network error"}")
                 finish()
             }
 
@@ -119,6 +119,7 @@ class GeminiLiveVoiceSession(
     }
 
     private fun handleServerMessage(raw: String) {
+        if (stopped.get()) return
         val root = runCatching { JSONObject(raw) }.getOrNull() ?: return
         root.optJSONObject("error")?.let { error ->
             onStatus("Gemini Live error: ${error.optString("message", "request rejected")}")
@@ -160,6 +161,11 @@ class GeminiLiveVoiceSession(
 
     private fun startMicrophone() {
         if (stopped.get() || !audioStarted.compareAndSet(false, true)) return
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            onStatus("Microphone permission was revoked. Allow it again to use live voice.")
+            stop()
+            return
+        }
         val minBytes = AudioRecord.getMinBufferSize(INPUT_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
         if (minBytes <= 0) {
             onStatus("This device cannot initialize 16 kHz microphone capture.")

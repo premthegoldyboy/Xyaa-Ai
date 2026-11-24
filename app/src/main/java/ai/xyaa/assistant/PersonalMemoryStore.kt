@@ -1,0 +1,214 @@
+package ai.xyaa.assistant
+
+import android.content.Context
+import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyProperties
+import android.util.Base64
+import org.json.JSONArray
+import org.json.JSONObject
+import java.security.KeyStore
+import javax.crypto.Cipher
+import javax.crypto.KeyGenerator
+import javax.crypto.SecretKey
+import javax.crypto.spec.GCMParameterSpec
+
+/**
+ * Durable, consent-based personal memory.
+ *
+ * This store is separate from ConversationMemory: only explicit "remember ..." requests
+ * are written here. The encrypted payload is kept in app-private preferences and the
+ * AES key is non-exportable in Android Keystore.
+ */
+class PersonalMemoryStore(context: Context) {
+    data class Item(
+        val id: String,
+        val category: String,
+        val content: String,
+        val createdAt: Long,
+        val updatedAt: Long
+    )
+
+    private val prefs = context.getSharedPreferences("xyaa_personal_memory_v1", Context.MODE_PRIVATE)
+    private val lock = Any()
+    private var storageUnreadable = false
+    private val keyAlias = "xyaa_personal_memory_v1_aes"
+    private val maxItems = 200
+    private val maxContentChars = 500
+
+    fun isPaused(): Boolean = prefs.getBoolean("paused", false)
+
+    fun setPaused(paused: Boolean) {
+        prefs.edit().putBoolean("paused", paused).apply()
+    }
+
+    fun add(content: String, category: String = classify(content)): Item? = synchronized(lock) {
+        val cleaned = content.trim().take(maxContentChars)
+        if (cleaned.isBlank() || isPaused() || containsCredentialLikeData(cleaned)) return@synchronized null
+        val items = readUnsafe().toMutableList()
+        if (storageUnreadable) return@synchronized null
+        val duplicate = items.indexOfFirst { it.content.equals(cleaned, ignoreCase = true) }
+        val now = System.currentTimeMillis()
+        val safeCategory = category.trim().lowercase().take(32).ifBlank { "general" }
+        val item = if (duplicate >= 0) {
+            items[duplicate].copy(category = safeCategory, updatedAt = now).also { items[duplicate] = it }
+        } else {
+            Item(java.util.UUID.randomUUID().toString(), safeCategory, cleaned, now, now).also { items.add(it) }
+        }
+        while (items.size > maxItems) items.removeAt(0)
+        writeUnsafe(items)
+        item
+    }
+
+    /** Updates an existing user-approved fact without creating a second copy. */
+    fun update(id: String, content: String): Item? = synchronized(lock) {
+        val cleaned = content.trim().take(maxContentChars)
+        if (cleaned.isBlank() || isPaused() || containsCredentialLikeData(cleaned)) return@synchronized null
+        val items = readUnsafe().toMutableList()
+        if (storageUnreadable) return@synchronized null
+        val index = items.indexOfFirst { it.id == id }
+        if (index < 0) return@synchronized null
+        val updated = items[index].copy(category = classify(cleaned), content = cleaned, updatedAt = System.currentTimeMillis())
+        val duplicate = items.indexOfFirst { it.id != id && it.content.equals(cleaned, ignoreCase = true) }
+        val result = if (duplicate >= 0) {
+            // The edited fact already exists: merge into the surviving item and return its real ID.
+            items[duplicate].copy(category = updated.category, updatedAt = updated.updatedAt).also {
+                items[duplicate] = it
+                items.removeAt(index)
+            }
+        } else updated.also { items[index] = it }
+        writeUnsafe(items)
+        result
+    }
+
+    fun all(): List<Item> = synchronized(lock) { readUnsafe().sortedByDescending { it.updatedAt } }
+
+    fun deleteMatching(query: String): Int = synchronized(lock) {
+        val needle = query.trim()
+        if (needle.isBlank()) return@synchronized 0
+        val items = readUnsafe().toMutableList()
+        if (storageUnreadable) return@synchronized 0
+        val before = items.size
+        items.removeAll { it.content.contains(needle, ignoreCase = true) }
+        val removed = before - items.size
+        if (removed > 0) writeUnsafe(items)
+        removed
+    }
+
+    fun delete(id: String): Boolean = synchronized(lock) {
+        val items = readUnsafe().toMutableList()
+        if (storageUnreadable) return@synchronized false
+        val changed = items.removeAll { it.id == id }
+        if (changed) writeUnsafe(items)
+        changed
+    }
+
+    fun clear() = synchronized(lock) {
+        storageUnreadable = false
+        prefs.edit().remove("payload").apply()
+    }
+
+    /** Relevant personal facts only; never includes the recent transcript. */
+    fun contextForPrompt(query: String, limit: Int = 8): String = synchronized(lock) {
+        if (isPaused()) return@synchronized ""
+        val items = readUnsafe()
+        if (items.isEmpty()) return@synchronized ""
+        val terms = memoryTerms(query)
+        if (terms.isEmpty()) return@synchronized ""
+        val ranked = items.map { item ->
+            val itemTerms = memoryTerms(item.category + " " + item.content)
+            item to terms.intersect(itemTerms).size
+        }.sortedWith(compareByDescending<Pair<Item, Int>> { it.second }.thenByDescending { it.first.updatedAt })
+        val selected = ranked.filter { it.second > 0 }.take(limit)
+        selected.joinToString("\n") { "- [${it.first.category}] ${it.first.content}" }.take(2400)
+    }
+
+    private fun readUnsafe(): List<Item> {
+        val packed = prefs.getString("payload", null) ?: return emptyList()
+        return runCatching {
+            val bytes = Base64.decode(packed, Base64.NO_WRAP)
+            require(bytes.size > 12)
+            val iv = bytes.copyOfRange(0, 12)
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(Cipher.DECRYPT_MODE, getKey(), GCMParameterSpec(128, iv))
+            val json = JSONArray(String(cipher.doFinal(bytes.copyOfRange(12, bytes.size)), Charsets.UTF_8))
+            (0 until json.length()).mapNotNull { index ->
+                val obj = json.optJSONObject(index) ?: return@mapNotNull null
+                val id = obj.optString("id")
+                val category = obj.optString("category")
+                val content = obj.optString("content")
+                if (id.isBlank() || content.isBlank()) null else Item(
+                    id, category.ifBlank { "general" }, content.take(maxContentChars),
+                    obj.optLong("createdAt"), obj.optLong("updatedAt")
+                )
+            }.takeLast(maxItems)
+        }.getOrElse { storageUnreadable = true; emptyList() }
+    }
+
+    private fun writeUnsafe(items: List<Item>) {
+        val json = JSONArray()
+        items.takeLast(maxItems).forEach { item ->
+            json.put(JSONObject()
+                .put("id", item.id)
+                .put("category", item.category)
+                .put("content", item.content)
+                .put("createdAt", item.createdAt)
+                .put("updatedAt", item.updatedAt))
+        }
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.ENCRYPT_MODE, getKey())
+        val encrypted = cipher.doFinal(json.toString().toByteArray(Charsets.UTF_8))
+        prefs.edit().putString("payload", Base64.encodeToString(cipher.iv + encrypted, Base64.NO_WRAP)).apply()
+    }
+
+    private fun getKey(): SecretKey {
+        val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        (store.getKey(keyAlias, null) as? SecretKey)?.let { return it }
+        val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
+        generator.init(
+            KeyGenParameterSpec.Builder(keyAlias, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
+                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                .setRandomizedEncryptionRequired(true)
+                .build()
+        )
+        return generator.generateKey()
+    }
+
+    private fun memoryTerms(value: String): Set<String> = Regex("[a-z0-9]{3,}")
+        .findAll(value.lowercase())
+        .map { match ->
+            when (match.value) {
+                "favorite", "favorites", "favourite", "favourites" -> "favourite"
+                "color", "colour" -> "color"
+                "goal", "goals", "plan", "plans", "deadline" -> "plan"
+                "hobby", "hobbies", "interest", "interests" -> "interest"
+                else -> match.value
+            }
+        }.toSet()
+
+    private fun containsCredentialLikeData(value: String): Boolean {
+        val lower = value.lowercase()
+        val credentialPhrases = listOf(
+            "password", "passcode", "api key", "access token", "refresh token",
+            "bearer token", "one-time password", " otp", "secret key", "private key",
+            "recovery code", "security code", "client secret"
+        )
+        if (credentialPhrases.any(lower::contains)) return true
+        // Catch common credential assignments even when the user does not label them as secrets.
+        if (Regex("""\b(?:token|secret|credential|password|passwd|api[_ -]?key)\s*[:=]\s*\S+""", RegexOption.IGNORE_CASE).containsMatchIn(value)) return true
+        // PEM/private-key material and long opaque key-like strings should never enter memory.
+        if (value.contains("-----BEGIN") && value.contains("PRIVATE KEY")) return true
+        return Regex("""\b[A-Za-z0-9_-]{32,}\b""").containsMatchIn(value)
+    }
+
+    private fun classify(value: String): String {
+        val lower = value.lowercase()
+        return when {
+            listOf("favourite", "favorite", "i love", "i like").any(lower::contains) -> "favourites"
+            listOf("interested in", "interest", "hobby", "i enjoy").any(lower::contains) -> "interests"
+            listOf("plan", "goal", "want to", "aim to", "deadline").any(lower::contains) -> "plans"
+            listOf("prefer", "i'd rather", "i would rather").any(lower::contains) -> "preferences"
+            else -> "general"
+        }
+    }
+}

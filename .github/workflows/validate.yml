@@ -3,6 +3,9 @@ on:
   pull_request:
   push:
     branches: [main, 'xyaa/**']
+permissions:
+  contents: read
+
 jobs:
   smoke-tests:
     runs-on: ubuntu-latest
@@ -11,4 +14,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m py_compile scripts/code_studio_worker.py
       - run: node --test
