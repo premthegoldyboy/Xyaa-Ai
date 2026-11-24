@@ -30,6 +30,7 @@ class PersonalMemoryStore(context: Context) {
 
     private val prefs = context.getSharedPreferences("xyaa_personal_memory_v1", Context.MODE_PRIVATE)
     private val lock = Any()
+    private var storageUnreadable = false
     private val keyAlias = "xyaa_personal_memory_v1_aes"
     private val maxItems = 200
     private val maxContentChars = 500
@@ -44,6 +45,7 @@ class PersonalMemoryStore(context: Context) {
         val cleaned = content.trim().take(maxContentChars)
         if (cleaned.isBlank() || isPaused() || containsCredentialLikeData(cleaned)) return@synchronized null
         val items = readUnsafe().toMutableList()
+        if (storageUnreadable) return@synchronized null
         val duplicate = items.indexOfFirst { it.content.equals(cleaned, ignoreCase = true) }
         val now = System.currentTimeMillis()
         val safeCategory = category.trim().lowercase().take(32).ifBlank { "general" }
@@ -62,6 +64,7 @@ class PersonalMemoryStore(context: Context) {
         val cleaned = content.trim().take(maxContentChars)
         if (cleaned.isBlank() || isPaused() || containsCredentialLikeData(cleaned)) return@synchronized null
         val items = readUnsafe().toMutableList()
+        if (storageUnreadable) return@synchronized null
         val index = items.indexOfFirst { it.id == id }
         if (index < 0) return@synchronized null
         val updated = items[index].copy(category = classify(cleaned), content = cleaned, updatedAt = System.currentTimeMillis())
@@ -83,6 +86,7 @@ class PersonalMemoryStore(context: Context) {
         val needle = query.trim()
         if (needle.isBlank()) return@synchronized 0
         val items = readUnsafe().toMutableList()
+        if (storageUnreadable) return@synchronized 0
         val before = items.size
         items.removeAll { it.content.contains(needle, ignoreCase = true) }
         val removed = before - items.size
@@ -92,12 +96,14 @@ class PersonalMemoryStore(context: Context) {
 
     fun delete(id: String): Boolean = synchronized(lock) {
         val items = readUnsafe().toMutableList()
+        if (storageUnreadable) return@synchronized false
         val changed = items.removeAll { it.id == id }
         if (changed) writeUnsafe(items)
         changed
     }
 
     fun clear() = synchronized(lock) {
+        storageUnreadable = false
         prefs.edit().remove("payload").apply()
     }
 
@@ -135,7 +141,7 @@ class PersonalMemoryStore(context: Context) {
                     obj.optLong("createdAt"), obj.optLong("updatedAt")
                 )
             }.takeLast(maxItems)
-        }.getOrDefault(emptyList())
+        }.getOrElse { storageUnreadable = true; emptyList() }
     }
 
     private fun writeUnsafe(items: List<Item>) {
