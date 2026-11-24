@@ -227,3 +227,17 @@ test('memory formatting keeps public SPOKEN summaries after hidden-block sanitiz
   assert.match(formatter, /val source = if \(spoken\.isNotBlank\(\)\) spoken else forDisplay\(safe\)/);
   assert.match(formatter, /private fun stripHiddenBlocks\(raw: String\)/);
 });
+
+
+test('validated voice model promotion preserves and restores the previous installation on failure', () => {
+  const neural = read('app/src/main/java/ai/xyaa/assistant/NeuralVoiceEngine.kt');
+  const wake = read('app/src/main/java/ai/xyaa/assistant/WakeWordService.kt');
+  for (const source of [neural, wake]) {
+    assert.match(source, /\.previous/);
+    assert.match(source, /target\.renameTo\(backup\)/);
+    assert.match(source, /stagedModel\.renameTo\(target\)/);
+    assert.match(source, /backup\.renameTo\(target\)/);
+  }
+  assert.doesNotMatch(neural, /modelDir\.deleteRecursively\(\)\s*\n\s*check\(stagedModel\.renameTo\(modelDir\)/);
+  assert.doesNotMatch(wake, /modelDir\.deleteRecursively\(\)\s*\n\s*check\(stagedModel\.renameTo\(modelDir\)/);
+});
