@@ -178,6 +178,14 @@ object OpenJarvisApi {
         }
     }
 
+    suspend fun runAgent(baseUrl: String, apiKey: String, agent: JarvisAgent): String =
+        withContext(Dispatchers.IO) {
+            val response = JSONObject(
+                request(baseUrl, "/v1/managed-agents/${agent.id}/run", apiKey, "POST")
+            )
+            response.optString("status", "running")
+        }
+
     suspend fun setAgentPaused(baseUrl: String, apiKey: String, agent: JarvisAgent, pause: Boolean) =
         withContext(Dispatchers.IO) {
             request(baseUrl, "/v1/managed-agents/${agent.id}/${if (pause) "pause" else "resume"}", apiKey, "POST")
