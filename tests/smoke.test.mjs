@@ -77,6 +77,14 @@ test('Android chat renders structured Markdown and selectable code blocks', () =
 });
 
 
+test('research reports preserve Markdown and use the shared rich renderer', () => {
+  const ui = readFileSync(new URL('../app/src/main/java/ai/xyaa/assistant/XyaaPremiumUi.kt', import.meta.url), 'utf8');
+  const researchPage = ui.slice(ui.indexOf('private fun ResearchPage'), ui.indexOf('private fun SkillsPage'));
+  assert.match(researchPage, /MarkdownMessage\(/);
+  assert.match(researchPage, /AssistantTextFormatter\.forRichDisplay\(report\)/);
+  assert.doesNotMatch(researchPage, /Text\(AssistantTextFormatter\.forDisplay\(report\)/);
+});
+
 test('spoken chat transcript enters smoothly and bubble growth is animated', () => {
   const ui = readFileSync(new URL('../app/src/main/java/ai/xyaa/assistant/XyaaPremiumUi.kt', import.meta.url), 'utf8');
   assert.match(ui, /AnimatedVisibility/);
