@@ -270,6 +270,13 @@ test('Code Studio worker never reads symlinked source, leaks API keys in URLs, o
   assert.match(worker, /non-regular file mode/);
 });
 
+test('browser PWA sends Gemini API keys in a header instead of the request URL', () => {
+  const pwa = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  assert.match(pwa, /headers:\{[^}]*'x-goog-api-key':cfg\.key/);
+  assert.match(pwa, /:generateContent';const res=await fetch\(url/);
+  assert.doesNotMatch(pwa, /generateContent\?key=/);
+});
+
 test('legacy browser PWA cancels speech that exceeds its timeout and clears external window opener', () => {
   const pwa = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
   assert.match(pwa, /timeoutId=setTimeout\(\(\)=>\{try\{window\.speechSynthesis\.cancel\(\)\}/);
