@@ -10,12 +10,40 @@
         <intent><action android:name="android.intent.action.VIEW" /><data android:scheme="https" /></intent>
     </queries>
     <application android:allowBackup="false" android:fullBackupContent="@xml/backup_rules" android:dataExtractionRules="@xml/data_extraction_rules" android:icon="@drawable/ic_xyaa" android:roundIcon="@drawable/ic_xyaa" android:label="XYAA" android:supportsRtl="true" android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        <service
+            android:name=".XyaaVoiceInteractionService"
+            android:label="XYAA"
+            android:permission="android.permission.BIND_VOICE_INTERACTION"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.voice.VoiceInteractionService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.voice_interaction"
+                android:resource="@xml/xyaa_voice_interaction" />
+        </service>
+        <service
+            android:name=".XyaaVoiceInteractionSessionService"
+            android:permission="android.permission.BIND_VOICE_INTERACTION"
+            android:exported="true" />
+        <service
+            android:name=".XyaaRecognitionService"
+            android:permission="android.permission.BIND_SPEECH_RECOGNITION_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.speech.RecognitionService" />
+            </intent-filter>
+        </service>
         <service android:name=".WakeWordService" android:exported="false" android:foregroundServiceType="microphone" />
         <receiver android:name=".WakeWordStopReceiver" android:exported="false" />
         <activity android:name=".MainActivity" android:exported="true" android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.ASSIST" />
+                <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
     </application>
