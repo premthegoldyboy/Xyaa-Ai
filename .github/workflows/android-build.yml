@@ -1,7 +1,7 @@
 name: Android build
 on:
   push:
-    branches: [main, "xyaa/**"]
+    branches: [main, "xyaa/**", "openjarvis-android-alternative"]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -26,8 +26,8 @@ jobs:
       - uses: android-actions/setup-android@v3
         with:
           packages: "platform-tools platforms;android-35 build-tools;35.0.0"
-      - name: Build debug APK
-        run: gradle lintDebug testDebugUnitTest assembleDebug
+      - name: Build XYAA and Jarvis Mobile debug APKs
+        run: gradle lintDebug testDebugUnitTest assembleDebug :jarvis-app:lintDebug :jarvis-app:assembleDebug
       - name: Print Android lint diagnostics
         if: always()
         run: |
@@ -37,3 +37,7 @@ jobs:
         with:
           name: xyaa-debug-apk
           path: app/build/outputs/apk/debug/*.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-mobile-debug-apk
+          path: jarvis-app/build/outputs/apk/debug/*.apk
