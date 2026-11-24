@@ -74,6 +74,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     private val liveVoiceStatus = mutableStateOf("Live voice is off")
     private val liveTranscript = mutableStateOf("")
     private val wakeWordEnabled = mutableStateOf(false)
+    private val wakeVoiceOverlayVisible = mutableStateOf(false)
     private var wakeReceiverRegistered = false
     private val wakeWordReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: android.content.Context?, intent: Intent?) {
@@ -81,6 +82,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 WakeWordService.ACTION_STATE -> wakeWordEnabled.value = intent.getBooleanExtra(WakeWordService.EXTRA_ACTIVE, false)
                 WakeWordService.ACTION_WAKE_DETECTED -> {
                     wakeWordEnabled.value = false
+                    wakeVoiceOverlayVisible.value = true
                     liveVoiceStatus.value = "Wake word detected · opening live voice…"
                     stopWakeWord()
                     window.decorView.postDelayed({ startLiveVoice() }, 600)
@@ -146,6 +148,8 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 liveVoiceActive = liveVoiceActive.value,
                 liveVoiceStatus = liveVoiceStatus.value,
                 liveTranscript = liveTranscript.value,
+                wakeVoiceOverlay = wakeVoiceOverlayVisible.value,
+                onDismissWakeVoiceOverlay = { wakeVoiceOverlayVisible.value = false },
                 onStartLiveVoice = ::startLiveVoice,
                 onStopLiveVoice = ::stopLiveVoice,
                 wakeWordEnabled = wakeWordEnabled.value,
@@ -154,6 +158,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             )
         }
         if (intent?.getBooleanExtra(WakeWordService.EXTRA_START_LIVE_VOICE, false) == true) {
+            wakeVoiceOverlayVisible.value = true
             window.decorView.postDelayed({ stopWakeWord(); startLiveVoice() }, 700)
         }
     }
@@ -182,6 +187,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         super.onNewIntent(intent)
         setIntent(intent)
         if (intent.getBooleanExtra(WakeWordService.EXTRA_START_LIVE_VOICE, false)) {
+            wakeVoiceOverlayVisible.value = true
             window.decorView.postDelayed({ stopWakeWord(); startLiveVoice() }, 600)
         }
     }
