@@ -257,7 +257,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED ||
             (android.os.Build.VERSION.SDK_INT >= 33 &&
                 checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)) {
-            val permissions = mutableListOf(android.Manifest.permission.RECORD_AUDIO)
+            val permissions = mutableListOf<String>()
             if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
                 permissions.add(android.Manifest.permission.RECORD_AUDIO)
             }
