@@ -35,5 +35,12 @@ jobs:
           gradle-version: "8.11.1"
       - name: Assemble debug APK
         run: gradle -p android :app:assembleDebug
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: openjarvis-android-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
 
 # The workflow intentionally builds only the native Android client in this branch.
