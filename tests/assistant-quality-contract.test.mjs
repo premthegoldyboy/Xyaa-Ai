@@ -341,9 +341,13 @@ test('XYAA is registered as a system voice assistant and launches Live Voice fro
   assert.match(metadata, /android:supportsAssist="true"/);
   assert.match(service, /class XyaaVoiceInteractionService : VoiceInteractionService/);
   assert.match(service, /class XyaaVoiceInteractionSessionService : VoiceInteractionSessionService/);
+  assert.match(service, /override fun onPrepareShow\(args: Bundle\?, showFlags: Int\)/);
+  assert.match(service, /setUiEnabled\(false\)/);
   assert.match(service, /startAssistantActivity\(launch\)/);
+  assert.match(service, /action = Intent.ACTION_ASSIST/);
   assert.match(service, /WakeWordService.EXTRA_START_LIVE_VOICE/);
   assert.match(service, /SHOW_WITH_ASSIST or VoiceInteractionSession.SHOW_WITH_SCREENSHOT/);
+  assert.doesNotMatch(service, /\n\s*hide\(\)/);
   assert.match(activity, /RoleManager.ROLE_ASSISTANT/);
   assert.match(activity, /createRequestRoleIntent\(RoleManager.ROLE_ASSISTANT\)/);
   assert.match(activity, /intent\?\.action == Intent.ACTION_ASSIST/);
