@@ -1,6 +1,7 @@
 package ai.xyaa.assistant
 
 import android.app.Activity
+import android.app.role.RoleManager
 import android.content.Intent
 import android.content.BroadcastReceiver
 import android.content.IntentFilter
@@ -75,6 +76,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     private val liveTranscript = mutableStateOf("")
     private val wakeWordEnabled = mutableStateOf(false)
     private val wakeWordArmed = mutableStateOf(false)
+    private val assistantRoleHeld = mutableStateOf(false)
     private val wakeVoiceOverlayVisible = mutableStateOf(false)
     private var wakeReceiverRegistered = false
     @Volatile private var activityVisible = false
@@ -105,7 +107,8 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         super.onCreate(savedInstanceState)
         wakeWordArmed.value = getSharedPreferences("xyaa_voice", MODE_PRIVATE)
             .getBoolean("wake_word_armed", false)
-        wakeVoiceLaunchPending = intent?.getBooleanExtra(WakeWordService.EXTRA_START_LIVE_VOICE, false) == true
+        wakeVoiceLaunchPending = intent?.getBooleanExtra(WakeWordService.EXTRA_START_LIVE_VOICE, false) == true ||
+            intent?.action == Intent.ACTION_ASSIST
         skills = SkillEngine(this)
         managementAgent = ManagementAgent(this)
         conversationMemory = ConversationMemory(this)
@@ -165,6 +168,8 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 onStartLiveVoice = ::startLiveVoice,
                 onStopLiveVoice = ::stopLiveVoice,
                 wakeWordEnabled = wakeWordEnabled.value,
+                assistantRoleHeld = assistantRoleHeld.value,
+                onRequestAssistantRole = ::requestAssistantRole,
                 onStartWakeWord = ::startWakeWord,
                 onStopWakeWord = ::stopWakeWord
             )
@@ -178,6 +183,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     override fun onStart() {
         super.onStart()
         activityVisible = true
+        refreshAssistantRoleState()
         if (!wakeReceiverRegistered) {
             val filter = IntentFilter().apply {
                 addAction(WakeWordService.ACTION_STATE)
@@ -193,6 +199,11 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        refreshAssistantRoleState()
+    }
+
     override fun onStop() {
         activityVisible = false
         if (wakeReceiverRegistered) {
@@ -205,11 +216,35 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        if (intent.getBooleanExtra(WakeWordService.EXTRA_START_LIVE_VOICE, false)) {
+        if (intent.getBooleanExtra(WakeWordService.EXTRA_START_LIVE_VOICE, false) || intent.action == Intent.ACTION_ASSIST) {
             wakeVoiceLaunchPending = true
             wakeVoiceOverlayVisible.value = true
             window.decorView.postDelayed({ startLiveVoice() }, 600)
         }
+    }
+
+    private fun refreshAssistantRoleState() {
+        assistantRoleHeld.value = if (android.os.Build.VERSION.SDK_INT >= 29) {
+            getSystemService(RoleManager::class.java)?.isRoleHeld(RoleManager.ROLE_ASSISTANT) == true
+        } else false
+    }
+
+    private fun requestAssistantRole() {
+        if (android.os.Build.VERSION.SDK_INT < 29) {
+            liveVoiceStatus.value = "Android's assistant picker is available on Android 10 and newer."
+            return
+        }
+        val roleManager = getSystemService(RoleManager::class.java)
+        if (roleManager == null || !roleManager.isRoleAvailable(RoleManager.ROLE_ASSISTANT)) {
+            liveVoiceStatus.value = "This device does not expose the Android assistant role."
+            return
+        }
+        if (roleManager.isRoleHeld(RoleManager.ROLE_ASSISTANT)) {
+            assistantRoleHeld.value = true
+            liveVoiceStatus.value = "XYAA is already your default assistant."
+            return
+        }
+        startActivityForResult(roleManager.createRequestRoleIntent(RoleManager.ROLE_ASSISTANT), 73)
     }
 
     private fun startLiveVoice() {
@@ -1377,6 +1412,12 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     @Deprecated("Deprecated by Android; retained for compatibility.")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == 73) {
+            refreshAssistantRoleState()
+            liveVoiceStatus.value = if (assistantRoleHeld.value)
+                "XYAA is now your default Android assistant."
+            else "XYAA was not selected as the default assistant."
+        }
         if (requestCode == 71) {
             val ownerRequest = pendingPdfRequestId
             pendingPdfRequestId = null
