@@ -220,9 +220,14 @@ class ManagementAgent(context: Context) {
         val intent = Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse(item.optString("uri")), "application/pdf")
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
         return runCatching {
-            if (intent.resolveActivity(app.packageManager) == null) "No PDF viewer is available on this device."
-            else { app.startActivity(intent); "Opening ${item.optString("name")}." }
-        }.getOrElse { "I couldn't open that PDF: ${it.message ?: "viewer unavailable"}" }
+            // Let Android resolve the content URI directly; package-visibility preflights can
+            // incorrectly report that no PDF viewer exists even when one is installed.
+            app.startActivity(intent)
+            "Opening ${item.optString("name")}."
+        }.getOrElse { error ->
+            if (error is android.content.ActivityNotFoundException) "No PDF viewer is available on this device."
+            else "I couldn't open that PDF: ${error.message ?: "viewer unavailable"}"
+        }
     }
 
     private fun renamePdf(oldName: String, newNameRaw: String, records: JSONArray): String {
