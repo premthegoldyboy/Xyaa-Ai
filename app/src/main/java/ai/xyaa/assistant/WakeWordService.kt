@@ -38,6 +38,7 @@ class WakeWordService : Service() {
         const val ACTION_STATE = "ai.xyaa.assistant.WAKE_WORD_STATE"
         const val ACTION_USER_STOP = "ai.xyaa.assistant.WAKE_WORD_USER_STOP"
         const val EXTRA_ACTIVE = "active"
+        const val EXTRA_STATUS = "status"
         const val EXTRA_START_LIVE_VOICE = "start_live_voice"
         private const val CHANNEL = "xyaa_wake_word"
         private const val ALERT_CHANNEL = "xyaa_wake_word_alerts"
@@ -150,8 +151,11 @@ class WakeWordService : Service() {
             stream.release()
             kws.release()
         } catch (error: Throwable) {
-            if (!stopping.get()) updateNotification("Wake word unavailable: ${error.message ?: "model or microphone error"}")
-            sendState(false)
+            if (!stopping.get()) {
+                val message = "Wake word unavailable: ${error.message ?: "model or microphone error"}"
+                updateNotification(message)
+                sendState(false, message)
+            } else sendState(false)
         } finally {
             stopping.set(true)
             sendState(false)
@@ -311,8 +315,10 @@ class WakeWordService : Service() {
         getSystemService(NotificationManager::class.java).notify(ALERT_NOTIFICATION_ID, alert)
     }
 
-    private fun sendState(active: Boolean) {
-        sendBroadcast(Intent(ACTION_STATE).setPackage(packageName).putExtra(EXTRA_ACTIVE, active))
+    private fun sendState(active: Boolean, status: String? = null) {
+        val event = Intent(ACTION_STATE).setPackage(packageName).putExtra(EXTRA_ACTIVE, active)
+        if (!status.isNullOrBlank()) event.putExtra(EXTRA_STATUS, status)
+        sendBroadcast(event)
     }
 
     private fun updateNotification(message: String) {
