@@ -36,6 +36,7 @@ class WakeWordService : Service() {
         const val ACTION_STOP = "ai.xyaa.assistant.STOP_WAKE_WORD"
         const val ACTION_WAKE_DETECTED = "ai.xyaa.assistant.WAKE_DETECTED"
         const val ACTION_STATE = "ai.xyaa.assistant.WAKE_WORD_STATE"
+        const val ACTION_USER_STOP = "ai.xyaa.assistant.WAKE_WORD_USER_STOP"
         const val EXTRA_ACTIVE = "active"
         const val EXTRA_START_LIVE_VOICE = "start_live_voice"
         private const val CHANNEL = "xyaa_wake_word"
