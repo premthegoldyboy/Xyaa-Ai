@@ -236,8 +236,21 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             onStatus = { status -> runOnUiThread { liveVoiceStatus.value = status } },
             onTranscript = { text, fromUser ->
                 runOnUiThread {
-                    val line = (if (fromUser) "You: " else "XYAA: ") + text.trim()
+                    val spoken = text.trim()
+                    val line = (if (fromUser) "You: " else "XYAA: ") + spoken
                     liveTranscript.value = (liveTranscript.value + "\n" + line).trim().takeLast(2400)
+                    // Let the user end a hands-free session by voice; the armed wake word
+                    // is restored as soon as the Live microphone is released.
+                    val endVoiceCommand = Regex(
+                        "(?i)^(?:hey\\s+)?(?:zyaa[,. ]+)?(?:stop listening|end voice|goodbye|that's all)(?:\\s+please)?[.! ]*$"
+                    )
+                    if (fromUser && endVoiceCommand.matches(spoken)) {
+                        stopLiveVoice()
+                        liveVoiceStatus.value = if (wakeWordArmed.value)
+                            "Voice ended · say Hey Zyaa again."
+                        else "Live voice is off"
+                        return@runOnUiThread
+                    }
                 }
             },
             onClosed = {
