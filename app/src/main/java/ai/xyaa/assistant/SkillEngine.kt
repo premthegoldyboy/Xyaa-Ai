@@ -177,8 +177,11 @@ class SkillEngine(private val context: Context) {
             .filter { it.loadLabel(context.packageManager).toString().contains(requested, true) }
             .distinctBy { it.activityInfo.packageName }
         if (matches.size == 1) {
-            val label = matches.first().loadLabel(context.packageManager).toString()
-            return launch(context.packageManager.getLaunchIntentForPackage(matches.first().activityInfo.packageName)!!, "Opening $label.")
+            val match = matches.first()
+            val label = match.loadLabel(context.packageManager).toString()
+            val resolvedLaunchIntent = context.packageManager.getLaunchIntentForPackage(match.activityInfo.packageName)
+                ?: return "That app is no longer available. Please try again."
+            return launch(resolvedLaunchIntent, "Opening $label.")
         }
         if (matches.size > 1) return "I found several apps matching $requested. Please be more specific."
         return "I couldn't find an installed app named $requested."
