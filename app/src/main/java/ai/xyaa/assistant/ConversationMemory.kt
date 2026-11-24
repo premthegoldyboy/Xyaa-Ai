@@ -20,6 +20,7 @@ import javax.crypto.spec.GCMParameterSpec
 class ConversationMemory(context: Context) {
     private val prefs = context.getSharedPreferences("xyaa_conversation_memory", Context.MODE_PRIVATE)
     private val lock = Any()
+    private var storageUnreadable = false
     private val maxTurns = 120
     private val maxCharsPerMessage = 1800
     private val keyAlias = "xyaa_conversation_memory_aes"
@@ -29,6 +30,7 @@ class ConversationMemory(context: Context) {
     fun remember(role: String, text: String) = synchronized(lock) {
         if (role !in setOf("user", "assistant") || text.isBlank() || containsCredentialLikeData(text)) return@synchronized
         val turns = readUnsafe().toMutableList()
+        if (storageUnreadable) return@synchronized
         turns.add(Turn(role, text.take(maxCharsPerMessage), System.currentTimeMillis()))
         while (turns.size > maxTurns) turns.removeAt(0)
         writeUnsafe(turns)
@@ -41,7 +43,7 @@ class ConversationMemory(context: Context) {
         turns.joinToString("\n") { "${it.role}: ${it.text}" }.take(9000)
     }
 
-    fun clear() = synchronized(lock) { prefs.edit().remove("turns").remove("payload").apply() }
+    fun clear() = synchronized(lock) { storageUnreadable = false; prefs.edit().remove("turns").remove("payload").apply() }
 
     fun recentTurns(): List<Turn> = synchronized(lock) { readUnsafe().toList() }
 
@@ -54,12 +56,17 @@ class ConversationMemory(context: Context) {
                 val cipher = Cipher.getInstance("AES/GCM/NoPadding")
                 cipher.init(Cipher.DECRYPT_MODE, getKey(), GCMParameterSpec(128, packed.copyOfRange(0, 12)))
                 parseTurns(String(cipher.doFinal(packed.copyOfRange(12, packed.size)), Charsets.UTF_8))
-            }.getOrDefault(emptyList())
+            }.getOrElse { storageUnreadable = true; emptyList() }
         }
 
         // One-time migration from the previous plaintext SharedPreferences format.
         val legacy = prefs.getString("turns", null) ?: return emptyList()
-        val migrated = runCatching { parseTurns(legacy) }.getOrDefault(emptyList()).takeLast(maxTurns)
+        val parsed = runCatching { parseTurns(legacy) }
+        if (parsed.isFailure) {
+            storageUnreadable = true
+            return emptyList()
+        }
+        val migrated = parsed.getOrThrow().takeLast(maxTurns)
         if (migrated.isNotEmpty()) writeUnsafe(migrated)
         else prefs.edit().remove("turns").apply()
         return migrated
