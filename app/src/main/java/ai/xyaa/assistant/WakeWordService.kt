@@ -63,7 +63,9 @@ class WakeWordService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_STOP) {
+        if (intent?.action == ACTION_STOP ||
+            !getSharedPreferences("xyaa_voice", MODE_PRIVATE).getBoolean("wake_word_armed", false)
+        ) {
             stopSelf()
             return START_NOT_STICKY
         }
@@ -71,9 +73,9 @@ class WakeWordService : Service() {
             worker = Thread({ runDetector() }, "XYAA-WakeWord")
                 .apply { start() }
         }
-        // A microphone service must only run after an explicit foreground user action.
-        // Do not let Android restart it in the background after process death.
-        return START_NOT_STICKY
+        // The persisted preference is written only after the user explicitly enables wake word.
+        // Sticky restart lets Android recover the detector after reclaiming the app process.
+        return START_STICKY
     }
 
     private fun runDetector() {
