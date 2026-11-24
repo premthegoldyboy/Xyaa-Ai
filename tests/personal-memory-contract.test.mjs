@@ -66,3 +66,15 @@ test('personal memory relevance uses exact normalized terms instead of substring
   assert.match(store, /"favorite", "favorites", "favourite", "favourites" -> "favourite"/);
   assert.match(store, /"color", "colour" -> "color"/);
 });
+
+
+test('unreadable encrypted memory is preserved instead of overwritten by a later write', () => {
+  const conversation = read('app/src/main/java/ai/xyaa/assistant/ConversationMemory.kt');
+  const personal = read('app/src/main/java/ai/xyaa/assistant/PersonalMemoryStore.kt');
+  assert.match(conversation, /getOrElse \{ storageUnreadable = true; emptyList\(\) \}/);
+  assert.match(conversation, /if \(storageUnreadable\) return@synchronized/);
+  assert.match(conversation, /if \(parsed\.isFailure\)/);
+  assert.match(personal, /getOrElse \{ storageUnreadable = true; emptyList\(\) \}/);
+  assert.match(personal, /if \(storageUnreadable\) return@synchronized null/);
+  assert.match(personal, /storageUnreadable = false/);
+});
