@@ -242,8 +242,8 @@ internal fun XyaaPremiumApp(
                         SettingsPage(apiKey, { apiKey = it }, groqKey, { groqKey = it },
                             deepSeekKey, { deepSeekKey = it }, tavilyKey, { tavilyKey = it },
                             firecrawlKey, { firecrawlKey = it }, neuralVoiceStatus, onDownloadNeuralVoice, wakeWordEnabled,
-                            assistantRoleHeld, onRequestAssistantRole,
                             onStartWakeWord, onStopWakeWord,
+                            assistantRoleHeld, onRequestAssistantRole,
                             { onSaveKey(apiKey.trim()); onSaveProviderKeys(groqKey.trim(), deepSeekKey.trim(), tavilyKey.trim(), firecrawlKey.trim()) },
                             { confirmClear = true })
                     }
