@@ -345,6 +345,10 @@ test('XYAA is registered as a system voice assistant and launches Live Voice fro
   assert.match(metadata, /android:recognitionService=/);
   assert.match(metadata, /android:supportsAssist="true"/);
   assert.match(service, /class XyaaVoiceInteractionService : VoiceInteractionService/);
+  assert.match(service, /override fun onReady\(\)/);
+  assert.match(service, /startArmedWakeWordIfPermitted\(\)/);
+  assert.match(service, /ContextCompat\.startForegroundService/);
+  assert.match(service, /ContextCompat\.RECEIVER_NOT_EXPORTED/);
   assert.match(service, /class XyaaVoiceInteractionSessionService : VoiceInteractionSessionService/);
   assert.match(service, /override fun onPrepareShow\(args: Bundle\?, showFlags: Int\)/);
   assert.match(service, /setUiEnabled\(false\)/);
