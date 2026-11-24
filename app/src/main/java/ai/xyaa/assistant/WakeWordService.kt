@@ -238,12 +238,32 @@ class WakeWordService : Service() {
         }
         val stagedModel = File(staging, MODEL_NAME)
         check(needed.all { File(stagedModel, it).isFile }) { "Wake-word model installation is incomplete." }
-        modelDir.deleteRecursively()
-        check(stagedModel.renameTo(modelDir)) { "Could not finalize the wake-word model installation." }
+        installStagedModel(stagedModel, modelDir)
         staging.deleteRecursively()
         archive.delete()
         check(needed.all { File(modelDir, it).isFile }) { "Wake-word model installation is incomplete." }
         return modelDir
+    }
+
+    /** Keep the last working wake-word model if promotion of a validated update fails. */
+    private fun installStagedModel(stagedModel: File, target: File) {
+        val backup = File(target.parentFile, "${target.name}.previous")
+        if (backup.exists() && !target.exists()) {
+            check(backup.renameTo(target)) { "Could not restore the previous wake-word model." }
+        } else if (backup.exists()) {
+            backup.deleteRecursively()
+        }
+        val hadPrevious = target.exists()
+        if (hadPrevious) check(target.renameTo(backup)) { "Could not preserve the previous wake-word model." }
+        try {
+            check(stagedModel.renameTo(target)) { "Could not finalize the wake-word model installation." }
+        } catch (error: Throwable) {
+            if (hadPrevious && backup.exists()) {
+                check(backup.renameTo(target)) { "Wake-word installation failed and the previous model could not be restored." }
+            }
+            throw error
+        }
+        if (backup.exists()) backup.deleteRecursively()
     }
 
     private fun createChannel() {
