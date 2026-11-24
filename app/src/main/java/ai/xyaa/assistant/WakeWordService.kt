@@ -36,6 +36,7 @@ class WakeWordService : Service() {
         const val ACTION_STOP = "ai.xyaa.assistant.STOP_WAKE_WORD"
         const val ACTION_WAKE_DETECTED = "ai.xyaa.assistant.WAKE_DETECTED"
         const val ACTION_STATE = "ai.xyaa.assistant.WAKE_WORD_STATE"
+        const val ACTION_USER_STOP = "ai.xyaa.assistant.WAKE_WORD_USER_STOP"
         const val EXTRA_ACTIVE = "active"
         const val EXTRA_START_LIVE_VOICE = "start_live_voice"
         private const val CHANNEL = "xyaa_wake_word"
@@ -53,7 +54,6 @@ class WakeWordService : Service() {
     @Volatile private var record: AudioRecord? = null
     @Volatile private var worker: Thread? = null
     @Volatile private var spotter: KeywordSpotter? = null
-    @Volatile private var lastAlertAt = 0L
 
     override fun onCreate() {
         super.onCreate()
@@ -137,14 +137,13 @@ class WakeWordService : Service() {
                     kws.decode(stream)
                     val result = kws.getResult(stream).keyword
                     if (result.isNotBlank()) {
+                        // One wake phrase opens one voice session. Release the microphone now;
+                        // MainActivity re-arms this service after Live Voice finishes if still enabled.
                         kws.reset(stream)
-                        val now = System.currentTimeMillis()
-                        if (now - lastAlertAt > 30_000L) {
-                            lastAlertAt = now
-                            sendBroadcast(Intent(ACTION_WAKE_DETECTED).setPackage(packageName))
-                            showWakeAlert()
-                            updateNotification("I heard Hey Zyaa · tap the alert to talk")
-                        }
+                        sendBroadcast(Intent(ACTION_WAKE_DETECTED).setPackage(packageName))
+                        showWakeAlert()
+                        stopping.set(true)
+                        break
                     }
                 }
             }

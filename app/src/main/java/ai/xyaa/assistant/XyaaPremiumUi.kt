@@ -134,9 +134,13 @@ internal fun XyaaPremiumApp(
     liveVoiceActive: Boolean,
     liveVoiceStatus: String,
     liveTranscript: String,
+    wakeVoiceOverlay: Boolean,
+    onDismissWakeVoiceOverlay: () -> Unit,
     onStartLiveVoice: () -> Unit,
     onStopLiveVoice: () -> Unit,
     wakeWordEnabled: Boolean,
+    assistantRoleHeld: Boolean,
+    onRequestAssistantRole: () -> Unit,
     onStartWakeWord: () -> Unit,
     onStopWakeWord: () -> Unit
 ) {
@@ -239,6 +243,7 @@ internal fun XyaaPremiumApp(
                             deepSeekKey, { deepSeekKey = it }, tavilyKey, { tavilyKey = it },
                             firecrawlKey, { firecrawlKey = it }, neuralVoiceStatus, onDownloadNeuralVoice, wakeWordEnabled,
                             onStartWakeWord, onStopWakeWord,
+                            assistantRoleHeld, onRequestAssistantRole,
                             { onSaveKey(apiKey.trim()); onSaveProviderKeys(groqKey.trim(), deepSeekKey.trim(), tavilyKey.trim(), firecrawlKey.trim()) },
                             { confirmClear = true })
                     }
@@ -251,6 +256,36 @@ internal fun XyaaPremiumApp(
             text = { Text("This removes XYAA's locally saved conversation context from this device.", color = Muted) },
             confirmButton = { TextButton(onClick = { onClearMemory(); confirmClear = false }) { Text("Clear memory", color = Color(0xFFFF8C9B)) } },
             dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("Cancel", color = Muted) } }
+        )
+
+        // Android does not permit ordinary apps to pop an Activity over another app.
+        // Show this voice surface as soon as XYAA is foregrounded from the wake notification.
+        if (wakeVoiceOverlay) AlertDialog(
+            onDismissRequest = onDismissWakeVoiceOverlay,
+            containerColor = Panel2,
+            title = { Text("Hey, I'm listening", color = White, fontWeight = FontWeight.Bold) },
+            text = {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    EnergyOrb(Modifier.fillMaxWidth().height(150.dp), liveVoiceActive)
+                    Text(
+                        if (liveVoiceActive) "Speak naturally. XYAA is listening for your command."
+                        else liveVoiceStatus,
+                        color = Cyan, fontSize = 12.sp, lineHeight = 18.sp
+                    )
+                    if (liveTranscript.isNotBlank()) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(liveTranscript.takeLast(900), color = Muted, fontSize = 11.sp, lineHeight = 16.sp)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = onDismissWakeVoiceOverlay) { Text("Hide", color = Cyan) }
+            },
+            dismissButton = {
+                TextButton(onClick = { onStopLiveVoice(); onDismissWakeVoiceOverlay() }) {
+                    Text("End voice", color = Color(0xFFFF8C9B))
+                }
+            }
         )
     }
 }
@@ -273,7 +308,9 @@ private fun HomePage(
             MainButton("Speak", Icons.Default.Mic, Modifier.weight(1f), true, voice)
         }
         InfoCard("Live voice", if (live) liveStatus else "Start a real-time conversation with XYAA.", if (live) "ACTIVE" else "READY")
-        InfoCard("Hey XYAA wake word", if (wake) "On-device wake-word service is running." else "On-device wake-word service is off.",
+        InfoCard("Hey XYAA wake word",
+            if (wake) "Armed · pauses during Live Voice and automatically resumes when the conversation ends."
+            else "On-device wake-word service is off.",
             if (wake) "ON" else "OFF", {
                 TextButton(onClick = { if (wake) stopWake() else startWake() }) {
                     Text(if (wake) "Stop" else "Enable", color = Cyan)
@@ -1094,6 +1131,7 @@ private fun SettingsPage(
     gemini: String, setGemini: (String)->Unit, groq: String, setGroq: (String)->Unit,
     deep: String, setDeep: (String)->Unit, tavily: String, setTavily: (String)->Unit,
     firecrawl: String, setFirecrawl: (String)->Unit, voiceStatus: String, downloadVoice: ()->Unit, wake: Boolean, startWake: ()->Unit, stopWake: ()->Unit,
+    assistantRoleHeld: Boolean, requestAssistantRole: () -> Unit,
     save: ()->Unit, clear: ()->Unit
 ) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal=18.dp)) {
@@ -1117,6 +1155,26 @@ private fun SettingsPage(
         InfoCard("Hey XYAA wake word",if(wake) "On-device wake-word service is enabled." else "On-device wake-word service is disabled.",if(wake) "ON" else "OFF",{
             TextButton(onClick={if(wake)stopWake() else startWake()}) { Text(if(wake)"Turn off" else "Turn on",color=Cyan) }
         })
+        Spacer(Modifier.height(12.dp))
+        InfoCard(
+            "Android default assistant",
+            if (assistantRoleHeld) "XYAA is selected as your device assistant. Use your phone's assistant gesture to launch it."
+            else "Set XYAA as your Android assistant to launch it with the system assistant gesture, where your device supports one.",
+            if (assistantRoleHeld) "ACTIVE" else "OPTIONAL"
+        )
+        OutlinedButton(
+            onClick = requestAssistantRole,
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !assistantRoleHeld
+        ) {
+            Icon(Icons.Default.Assistant, null)
+            Spacer(Modifier.width(8.dp))
+            Text(if (assistantRoleHeld) "XYAA is your default assistant" else "Set XYAA as default assistant")
+        }
+        Text(
+            "Android will show its own confirmation screen. You can keep or restore another assistant at any time in system settings. The available gesture depends on your phone manufacturer and navigation settings.",
+            color = Muted, fontSize = 10.sp, lineHeight = 14.sp
+        )
         Spacer(Modifier.height(18.dp)); Label("PRIVACY & MEMORY")
         InfoCard("Conversation memory","Recent turns are stored locally. Relevant context may be sent with your prompt to the AI provider you configured when you chat.","LOCAL")
         OutlinedButton(onClick=clear,modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.outlinedButtonColors(contentColor=Color(0xFFFF8C9B))) {

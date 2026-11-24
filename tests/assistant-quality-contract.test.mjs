@@ -268,6 +268,54 @@ test('app launching handles a package disappearing between discovery and launch'
 });
 
 
+
+test('Hey Zyaa wake detection is one-shot and releases the microphone until manually re-enabled', () => {
+  const wake = read('app/src/main/java/ai/xyaa/assistant/WakeWordService.kt');
+  assert.match(wake, /if \(result\.isNotBlank\(\)\)[\s\S]*?showWakeAlert\(\)[\s\S]*?stopping\.set\(true\)[\s\S]*?break/);
+  assert.doesNotMatch(wake, /lastAlertAt|30_000L/);
+  assert.match(wake, /Tap to start talking with XYAA/);
+  assert.match(wake, /return START_NOT_STICKY/);
+});
+
+test('wake detection opens a foreground voice dialog and notification tap starts the live session', () => {
+  const activity = read('app/src/main/java/ai/xyaa/assistant/MainActivity.kt');
+  const ui = read('app/src/main/java/ai/xyaa/assistant/XyaaPremiumUi.kt');
+  assert.match(activity, /WakeWordService\.ACTION_WAKE_DETECTED -> \{[\s\S]*?wakeVoiceOverlayVisible\.value = true[\s\S]*?startLiveVoice\(\)/);
+  assert.match(activity, /EXTRA_START_LIVE_VOICE, false\) == true \|\| intent\?\.action == Intent\.ACTION_ASSIST\) \{[\s\S]*?wakeVoiceOverlayVisible\.value = true[\s\S]*?startLiveVoice\(\)/);
+  assert.match(ui, /if \(wakeVoiceOverlay\) AlertDialog/);
+  assert.match(ui, /Speak naturally\. XYAA is listening for your command\./);
+  assert.match(ui, /End voice/);
+});
+
+
+test('Live Voice can be ended by a short spoken stop command', () => {
+  const activity = read('app/src/main/java/ai/xyaa/assistant/MainActivity.kt');
+  assert.match(activity, /stop listening\|end voice\|goodbye\|that's all/);
+  assert.match(activity, /if \(fromUser && endVoiceCommand\.matches\(spoken\)\)/);
+  assert.match(activity, /stopLiveVoice\(\)/);
+  assert.match(activity, /Voice ended · say Hey Zyaa again/);
+});
+
+test('notification Stop action clears the persisted wake-word preference', () => {
+  const receiver = read('app/src/main/java/ai/xyaa/assistant/WakeWordStopReceiver.kt');
+  const activity = read('app/src/main/java/ai/xyaa/assistant/MainActivity.kt');
+  assert.match(receiver, /putBoolean\("wake_word_armed", false\)/);
+  assert.match(receiver, /ACTION_USER_STOP/);
+  assert.match(activity, /WakeWordService\.ACTION_USER_STOP -> \{[\s\S]*?wakeWordArmed\.value = false[\s\S]*?wakeWordEnabled\.value = false/);
+});
+
+test('wake word remains armed across a voice session and automatically re-arms after it closes', () => {
+  const activity = read('app/src/main/java/ai/xyaa/assistant/MainActivity.kt');
+  assert.match(activity, /wakeWordArmed = mutableStateOf\(false\)/);
+  assert.match(activity, /putBoolean\("wake_word_armed", true\)/);
+  assert.match(activity, /private fun pauseWakeWordForVoice\(\)/);
+  assert.match(activity, /private fun rearmWakeWordIfNeeded\(\)/);
+  assert.match(activity, /if \(activityVisible\) startWakeWordService\(\)/);
+  assert.match(activity, /rearmWakeWordIfNeeded\(\)/);
+  assert.match(activity, /if \(wakeWordArmed\.value && !wakeVoiceLaunchPending && !liveVoiceActive\.value\)/);
+  assert.match(activity, /putBoolean\("wake_word_armed", false\)/);
+});
+
 test('external intents are launched without package-visibility preflight false negatives', () => {
   const skills = read('app/src/main/java/ai/xyaa/assistant/SkillEngine.kt');
   const management = read('app/src/main/java/ai/xyaa/assistant/ManagementAgent.kt');
@@ -276,4 +324,29 @@ test('external intents are launched without package-visibility preflight false n
   assert.doesNotMatch(skills, /intent\.resolveActivity\(context\.packageManager\)/);
   assert.match(management, /app\.startActivity\(intent\)/);
   assert.doesNotMatch(management, /intent\.resolveActivity\(app\.packageManager\)/);
+});
+
+
+test('XYAA is registered as a system voice assistant and launches Live Voice from assistant invocation', () => {
+  const manifest = read('app/src/main/AndroidManifest.xml');
+  const metadata = read('app/src/main/res/xml/xyaa_voice_interaction.xml');
+  const service = read('app/src/main/java/ai/xyaa/assistant/XyaaVoiceInteraction.kt');
+  const activity = read('app/src/main/java/ai/xyaa/assistant/MainActivity.kt');
+  const ui = read('app/src/main/java/ai/xyaa/assistant/XyaaPremiumUi.kt');
+  assert.match(manifest, /android.permission.BIND_VOICE_INTERACTION/);
+  assert.match(manifest, /android.service.voice.VoiceInteractionService/);
+  assert.match(manifest, /android.intent.action.ASSIST/);
+  assert.match(metadata, /android:sessionService=/);
+  assert.match(metadata, /android:recognitionService=/);
+  assert.match(metadata, /android:supportsAssist="true"/);
+  assert.match(service, /class XyaaVoiceInteractionService : VoiceInteractionService/);
+  assert.match(service, /class XyaaVoiceInteractionSessionService : VoiceInteractionSessionService/);
+  assert.match(service, /startAssistantActivity\(launch\)/);
+  assert.match(service, /WakeWordService.EXTRA_START_LIVE_VOICE/);
+  assert.match(service, /SHOW_WITH_ASSIST or VoiceInteractionSession.SHOW_WITH_SCREENSHOT/);
+  assert.match(activity, /RoleManager.ROLE_ASSISTANT/);
+  assert.match(activity, /createRequestRoleIntent\(RoleManager.ROLE_ASSISTANT\)/);
+  assert.match(activity, /intent\?\.action == Intent.ACTION_ASSIST/);
+  assert.match(ui, /Set XYAA as default assistant/);
+  assert.match(ui, /assistantRoleHeld/);
 });

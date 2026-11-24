@@ -1,6 +1,7 @@
 package ai.xyaa.assistant
 
 import android.app.Activity
+import android.app.role.RoleManager
 import android.content.Intent
 import android.content.BroadcastReceiver
 import android.content.IntentFilter
@@ -74,15 +75,27 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     private val liveVoiceStatus = mutableStateOf("Live voice is off")
     private val liveTranscript = mutableStateOf("")
     private val wakeWordEnabled = mutableStateOf(false)
+    private val wakeWordArmed = mutableStateOf(false)
+    private val assistantRoleHeld = mutableStateOf(false)
+    private val wakeVoiceOverlayVisible = mutableStateOf(false)
     private var wakeReceiverRegistered = false
+    @Volatile private var activityVisible = false
+    @Volatile private var wakeVoiceLaunchPending = false
     private val wakeWordReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: android.content.Context?, intent: Intent?) {
             when (intent?.action) {
-                WakeWordService.ACTION_STATE -> wakeWordEnabled.value = intent.getBooleanExtra(WakeWordService.EXTRA_ACTIVE, false)
-                WakeWordService.ACTION_WAKE_DETECTED -> {
+                WakeWordService.ACTION_STATE -> {
+                    val serviceActive = intent.getBooleanExtra(WakeWordService.EXTRA_ACTIVE, false)
+                    wakeWordEnabled.value = serviceActive || wakeWordArmed.value
+                }
+                WakeWordService.ACTION_USER_STOP -> {
+                    wakeWordArmed.value = false
                     wakeWordEnabled.value = false
+                }
+                WakeWordService.ACTION_WAKE_DETECTED -> {
+                    wakeVoiceOverlayVisible.value = true
                     liveVoiceStatus.value = "Wake word detected · opening live voice…"
-                    stopWakeWord()
+                    pauseWakeWordForVoice()
                     window.decorView.postDelayed({ startLiveVoice() }, 600)
                 }
             }
@@ -92,6 +105,10 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        wakeWordArmed.value = getSharedPreferences("xyaa_voice", MODE_PRIVATE)
+            .getBoolean("wake_word_armed", false)
+        wakeVoiceLaunchPending = intent?.getBooleanExtra(WakeWordService.EXTRA_START_LIVE_VOICE, false) == true ||
+            intent?.action == Intent.ACTION_ASSIST
         skills = SkillEngine(this)
         managementAgent = ManagementAgent(this)
         conversationMemory = ConversationMemory(this)
@@ -146,20 +163,27 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 liveVoiceActive = liveVoiceActive.value,
                 liveVoiceStatus = liveVoiceStatus.value,
                 liveTranscript = liveTranscript.value,
+                wakeVoiceOverlay = wakeVoiceOverlayVisible.value,
+                onDismissWakeVoiceOverlay = { wakeVoiceOverlayVisible.value = false },
                 onStartLiveVoice = ::startLiveVoice,
                 onStopLiveVoice = ::stopLiveVoice,
                 wakeWordEnabled = wakeWordEnabled.value,
+                assistantRoleHeld = assistantRoleHeld.value,
+                onRequestAssistantRole = ::requestAssistantRole,
                 onStartWakeWord = ::startWakeWord,
                 onStopWakeWord = ::stopWakeWord
             )
         }
-        if (intent?.getBooleanExtra(WakeWordService.EXTRA_START_LIVE_VOICE, false) == true) {
-            window.decorView.postDelayed({ stopWakeWord(); startLiveVoice() }, 700)
+        if (intent?.getBooleanExtra(WakeWordService.EXTRA_START_LIVE_VOICE, false) == true || intent?.action == Intent.ACTION_ASSIST) {
+            wakeVoiceOverlayVisible.value = true
+            window.decorView.postDelayed({ startLiveVoice() }, 700)
         }
     }
 
     override fun onStart() {
         super.onStart()
+        activityVisible = true
+        refreshAssistantRoleState()
         if (!wakeReceiverRegistered) {
             val filter = IntentFilter().apply {
                 addAction(WakeWordService.ACTION_STATE)
@@ -168,9 +192,20 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             ContextCompat.registerReceiver(this, wakeWordReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
             wakeReceiverRegistered = true
         }
+        // A wake notification is opening Live Voice, so do not race it by restarting
+        // the wake-word microphone before the live session acquires the microphone.
+        if (wakeWordArmed.value && !wakeVoiceLaunchPending && !liveVoiceActive.value) {
+            startWakeWordService()
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        refreshAssistantRoleState()
     }
 
     override fun onStop() {
+        activityVisible = false
         if (wakeReceiverRegistered) {
             unregisterReceiver(wakeWordReceiver)
             wakeReceiverRegistered = false
@@ -181,12 +216,40 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        if (intent.getBooleanExtra(WakeWordService.EXTRA_START_LIVE_VOICE, false)) {
-            window.decorView.postDelayed({ stopWakeWord(); startLiveVoice() }, 600)
+        if (intent.getBooleanExtra(WakeWordService.EXTRA_START_LIVE_VOICE, false) || intent.action == Intent.ACTION_ASSIST) {
+            wakeVoiceLaunchPending = true
+            wakeVoiceOverlayVisible.value = true
+            window.decorView.postDelayed({ startLiveVoice() }, 600)
         }
     }
 
+    private fun refreshAssistantRoleState() {
+        assistantRoleHeld.value = if (android.os.Build.VERSION.SDK_INT >= 29) {
+            getSystemService(RoleManager::class.java)?.isRoleHeld(RoleManager.ROLE_ASSISTANT) == true
+        } else false
+    }
+
+    private fun requestAssistantRole() {
+        if (android.os.Build.VERSION.SDK_INT < 29) {
+            liveVoiceStatus.value = "Android's assistant picker is available on Android 10 and newer."
+            return
+        }
+        val roleManager = getSystemService(RoleManager::class.java)
+        if (roleManager == null || !roleManager.isRoleAvailable(RoleManager.ROLE_ASSISTANT)) {
+            liveVoiceStatus.value = "This device does not expose the Android assistant role."
+            return
+        }
+        if (roleManager.isRoleHeld(RoleManager.ROLE_ASSISTANT)) {
+            assistantRoleHeld.value = true
+            liveVoiceStatus.value = "XYAA is already your default assistant."
+            return
+        }
+        startActivityForResult(roleManager.createRequestRoleIntent(RoleManager.ROLE_ASSISTANT), 73)
+    }
+
     private fun startLiveVoice() {
+        wakeVoiceLaunchPending = false
+        pauseWakeWordForVoice()
         stopSpeech() // never let the speaker talk into the live session's microphone
         if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO), 47)
@@ -196,6 +259,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         val key = SecureKeyStore(this).read()
         if (key.isNullOrBlank()) {
             liveVoiceStatus.value = "Add your Gemini API key in Settings first."
+            rearmWakeWordIfNeeded()
             return
         }
         if (liveVoiceActive.value) return
@@ -207,14 +271,28 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             onStatus = { status -> runOnUiThread { liveVoiceStatus.value = status } },
             onTranscript = { text, fromUser ->
                 runOnUiThread {
-                    val line = (if (fromUser) "You: " else "XYAA: ") + text.trim()
+                    val spoken = text.trim()
+                    val line = (if (fromUser) "You: " else "XYAA: ") + spoken
                     liveTranscript.value = (liveTranscript.value + "\n" + line).trim().takeLast(2400)
+                    // Let the user end a hands-free session by voice; the armed wake word
+                    // is restored as soon as the Live microphone is released.
+                    val endVoiceCommand = Regex(
+                        "(?i)^(?:hey\\s+)?(?:zyaa[,. ]+)?(?:stop listening|end voice|goodbye|that's all)(?:\\s+please)?[.! ]*$"
+                    )
+                    if (fromUser && endVoiceCommand.matches(spoken)) {
+                        stopLiveVoice()
+                        liveVoiceStatus.value = if (wakeWordArmed.value)
+                            "Voice ended · say Hey Zyaa again."
+                        else "Live voice is off"
+                        return@runOnUiThread
+                    }
                 }
             },
             onClosed = {
                 runOnUiThread {
                     liveVoiceActive.value = false
                     liveVoiceSession = null
+                    rearmWakeWordIfNeeded()
                 }
             }
         ).also { it.start() }
@@ -231,12 +309,31 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED ||
             (android.os.Build.VERSION.SDK_INT >= 33 &&
                 checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)) {
-            val permissions = mutableListOf(android.Manifest.permission.RECORD_AUDIO)
+            val permissions = mutableListOf<String>()
+            if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                permissions.add(android.Manifest.permission.RECORD_AUDIO)
+            }
             if (android.os.Build.VERSION.SDK_INT >= 33 &&
                 checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
                 permissions.add(android.Manifest.permission.POST_NOTIFICATIONS)
             }
             requestPermissions(permissions.toTypedArray(), 46)
+            return
+        }
+        wakeWordArmed.value = true
+        getSharedPreferences("xyaa_voice", MODE_PRIVATE).edit().putBoolean("wake_word_armed", true).apply()
+        startWakeWordService()
+    }
+
+    private fun startWakeWordService() {
+        if (!wakeWordArmed.value || !activityVisible || liveVoiceActive.value) return
+        if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED ||
+            (android.os.Build.VERSION.SDK_INT >= 33 &&
+                checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)) {
+            wakeWordArmed.value = false
+            wakeWordEnabled.value = false
+            getSharedPreferences("xyaa_voice", MODE_PRIVATE).edit().putBoolean("wake_word_armed", false).apply()
+            liveVoiceStatus.value = "Wake word needs microphone and notification permissions. Enable it again in Settings."
             return
         }
         runCatching {
@@ -248,7 +345,22 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         }
     }
 
+    /** Pause only the detector while Live Voice owns the microphone; keep the user's armed choice. */
+    private fun pauseWakeWordForVoice() {
+        stopService(Intent(this, WakeWordService::class.java))
+        wakeWordEnabled.value = wakeWordArmed.value
+    }
+
+    /** Restore hands-free wake detection after the voice session releases the microphone. */
+    private fun rearmWakeWordIfNeeded() {
+        if (!wakeWordArmed.value) return
+        if (activityVisible) startWakeWordService()
+        // If the Activity is backgrounded, onStart() will safely re-arm it next time.
+    }
+
     private fun stopWakeWord() {
+        wakeWordArmed.value = false
+        getSharedPreferences("xyaa_voice", MODE_PRIVATE).edit().putBoolean("wake_word_armed", false).apply()
         stopService(Intent(this, WakeWordService::class.java))
         wakeWordEnabled.value = false
     }
@@ -1300,6 +1412,12 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     @Deprecated("Deprecated by Android; retained for compatibility.")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == 73) {
+            refreshAssistantRoleState()
+            liveVoiceStatus.value = if (assistantRoleHeld.value)
+                "XYAA is now your default Android assistant."
+            else "XYAA was not selected as the default assistant."
+        }
         if (requestCode == 71) {
             val ownerRequest = pendingPdfRequestId
             pendingPdfRequestId = null
