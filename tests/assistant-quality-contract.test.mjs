@@ -325,3 +325,29 @@ test('external intents are launched without package-visibility preflight false n
   assert.match(management, /app\.startActivity\(intent\)/);
   assert.doesNotMatch(management, /intent\.resolveActivity\(app\.packageManager\)/);
 });
+
+
+test('XYAA is registered as a system voice assistant and launches Live Voice from assistant invocation', () => {
+  const manifest = read('app/src/main/AndroidManifest.xml');
+  const metadata = read('app/src/main/res/xml/xyaa_voice_interaction.xml');
+  const service = read('app/src/main/java/ai/xyaa/assistant/XyaaVoiceInteraction.kt');
+  const activity = read('app/src/main/java/ai/xyaa/assistant/MainActivity.kt');
+  const ui = read('app/src/main/java/ai/xyaa/assistant/XyaaPremiumUi.kt');
+  assert.match(manifest, /android.permission.BIND_VOICE_INTERACTION/);
+  assert.match(manifest, /android.service.voice.VoiceInteractionService/);
+  assert.match(manifest, /android.intent.action.ASSIST/);
+  assert.match(metadata, /android:sessionService=/);
+  assert.match(metadata, /android:recognitionService=/);
+  assert.match(metadata, /android:supportsAssist="true"/);
+  assert.match(service, /extends/); // service declarations are compiled as Kotlin classes below
+  assert.match(service, /class XyaaVoiceInteractionService : VoiceInteractionService/);
+  assert.match(service, /class XyaaVoiceInteractionSessionService : VoiceInteractionSessionService/);
+  assert.match(service, /startAssistantActivity\(launch\)/);
+  assert.match(service, /WakeWordService.EXTRA_START_LIVE_VOICE/);
+  assert.match(service, /SHOW_WITH_ASSIST or VoiceInteractionSession.SHOW_WITH_SCREENSHOT/);
+  assert.match(activity, /RoleManager.ROLE_ASSISTANT/);
+  assert.match(activity, /createRequestRoleIntent\(RoleManager.ROLE_ASSISTANT\)/);
+  assert.match(activity, /intent\?\.action == Intent.ACTION_ASSIST/);
+  assert.match(ui, /Set XYAA as default assistant/);
+  assert.match(ui, /assistantRoleHeld/);
+});
