@@ -117,6 +117,13 @@ test('microphone and notification permissions are checked at the component that 
   const reminder = read('app/src/main/java/ai/xyaa/assistant/ReminderWorker.kt');
   assert.match(live, /checkSelfPermission\(context, Manifest\.permission\.RECORD_AUDIO\)/);
   assert.match(wake, /checkSelfPermission\(this, android\.Manifest\.permission\.RECORD_AUDIO\)/);
+  assert.match(wake, /writeText\("HH EY1 Z AY1 AH0 @HEY_ZYAA/);
+  assert.match(wake, /putExtra\(EXTRA_STATUS, status\)/);
+  const interaction = read('app/src/main/java/ai/xyaa/assistant/XyaaVoiceInteraction.kt');
+  const activity = read('app/src/main/java/ai/xyaa/assistant/MainActivity.kt');
+  assert.match(interaction, /onShowSessionFailed/);
+  assert.match(interaction, /Android couldn't start the background microphone/);
+  assert.match(activity, /getStringExtra\(WakeWordService\.EXTRA_STATUS\)/);
   assert.match(reminder, /checkSelfPermission\(applicationContext, Manifest\.permission\.POST_NOTIFICATIONS\)/);
 });
 
