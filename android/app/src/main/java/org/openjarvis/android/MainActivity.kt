@@ -230,6 +230,9 @@ private fun OpenJarvisScreen(
                 }
                 status = "Response received"
             } catch (error: Exception) {
+                if (turns.lastOrNull()?.role == "assistant" && turns.lastOrNull()?.content.isNullOrBlank()) {
+                    turns.removeAt(turns.lastIndex)
+                }
                 status = "Request failed: " + (error.message ?: "unknown error")
             } finally {
                 busy = false
