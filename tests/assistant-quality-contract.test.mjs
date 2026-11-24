@@ -281,7 +281,7 @@ test('wake detection opens a foreground voice dialog and notification tap starts
   const activity = read('app/src/main/java/ai/xyaa/assistant/MainActivity.kt');
   const ui = read('app/src/main/java/ai/xyaa/assistant/XyaaPremiumUi.kt');
   assert.match(activity, /WakeWordService\.ACTION_WAKE_DETECTED -> \{[\s\S]*?wakeVoiceOverlayVisible\.value = true[\s\S]*?startLiveVoice\(\)/);
-  assert.match(activity, /EXTRA_START_LIVE_VOICE, false\)\) \{[\s\S]*?wakeVoiceOverlayVisible\.value = true[\s\S]*?startLiveVoice\(\)/);
+  assert.match(activity, /EXTRA_START_LIVE_VOICE, false\) == true\) \{[\s\S]*?wakeVoiceOverlayVisible\.value = true[\s\S]*?startLiveVoice\(\)/);
   assert.match(ui, /if \(wakeVoiceOverlay\) AlertDialog/);
   assert.match(ui, /Speak naturally\. XYAA is listening for your command\./);
   assert.match(ui, /End voice/);
