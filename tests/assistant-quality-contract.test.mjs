@@ -339,7 +339,6 @@ test('XYAA is registered as a system voice assistant and launches Live Voice fro
   assert.match(metadata, /android:sessionService=/);
   assert.match(metadata, /android:recognitionService=/);
   assert.match(metadata, /android:supportsAssist="true"/);
-  assert.match(service, /extends/); // service declarations are compiled as Kotlin classes below
   assert.match(service, /class XyaaVoiceInteractionService : VoiceInteractionService/);
   assert.match(service, /class XyaaVoiceInteractionSessionService : VoiceInteractionSessionService/);
   assert.match(service, /startAssistantActivity\(launch\)/);
