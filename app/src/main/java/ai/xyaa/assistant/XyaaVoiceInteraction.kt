@@ -75,7 +75,25 @@ class XyaaVoiceInteractionService : VoiceInteractionService() {
                 this,
                 Intent(this, WakeWordService::class.java)
             )
+        }.onFailure { error ->
+            sendBroadcast(
+                Intent(WakeWordService.ACTION_STATE).setPackage(packageName)
+                    .putExtra(WakeWordService.EXTRA_ACTIVE, false)
+                    .putExtra(
+                        WakeWordService.EXTRA_STATUS,
+                        "Android couldn't start the background microphone: ${error.message ?: "permission or system restriction"}"
+                    )
+            )
         }
+    }
+
+    override fun onShowSessionFailed(args: Bundle) {
+        super.onShowSessionFailed(args)
+        sendBroadcast(
+            Intent(WakeWordService.ACTION_STATE).setPackage(packageName)
+                .putExtra(WakeWordService.EXTRA_ACTIVE, false)
+                .putExtra(WakeWordService.EXTRA_STATUS, "Android could not open XYAA's assistant session.")
+        )
     }
 
     override fun onShutdown() {
