@@ -241,3 +241,12 @@ test('validated voice model promotion preserves and restores the previous instal
   assert.doesNotMatch(neural, /modelDir\.deleteRecursively\(\)\s*\n\s*check\(stagedModel\.renameTo\(modelDir\)/);
   assert.doesNotMatch(wake, /modelDir\.deleteRecursively\(\)\s*\n\s*check\(stagedModel\.renameTo\(modelDir\)/);
 });
+
+
+test('website launching accepts only safe HTTP(S) URLs with a valid host', () => {
+  const skills = read('app/src/main/java/ai/xyaa/assistant/SkillEngine.kt');
+  assert.match(skills, /scheme !in setOf\("http", "https"\)/);
+  assert.match(skills, /address\.host\.isNullOrBlank\(\)/);
+  assert.match(skills, /address\.userInfo != null/);
+  assert.match(skills, /requested\.any \{ it\.isWhitespace\(\) \|\| it\.isISOControl\(\) \}/);
+});
