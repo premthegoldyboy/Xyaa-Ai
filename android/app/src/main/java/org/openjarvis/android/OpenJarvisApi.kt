@@ -106,7 +106,7 @@ object OpenJarvisApi {
                     val delta = runCatching {
                         val choices = JSONObject(payload).optJSONArray("choices") ?: JSONArray()
                         val choice = choices.optJSONObject(0) ?: return@runCatching ""
-                        choice.optJSONObject("delta")?.optString("content").orEmpty()
+                        choice.optJSONObject("delta")?.opt("content") as? String ?: ""
                     }.getOrDefault("")
                     if (delta.isNotEmpty()) {
                         answer.append(delta)
