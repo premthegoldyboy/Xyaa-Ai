@@ -69,8 +69,8 @@ test('personal memory relevance uses exact normalized terms instead of substring
 
 
 test('unreadable encrypted memory is preserved instead of overwritten by a later write', () => {
-  const conversation = read('app/src/main/java/ai/xyaa/assistant/ConversationMemory.kt');
-  const personal = read('app/src/main/java/ai/xyaa/assistant/PersonalMemoryStore.kt');
+  const conversation = readFileSync(new URL('../app/src/main/java/ai/xyaa/assistant/ConversationMemory.kt', import.meta.url), 'utf8');
+  const personal = store;
   assert.match(conversation, /getOrElse \{ storageUnreadable = true; emptyList\(\) \}/);
   assert.match(conversation, /if \(storageUnreadable\) return@synchronized/);
   assert.match(conversation, /if \(parsed\.isFailure\)/);
