@@ -80,6 +80,14 @@ private fun OpenJarvisScreen(
     var modelsLoading by remember { mutableStateOf(false) }
     var modelsExpanded by remember { mutableStateOf(false) }
     val availableModels = remember { mutableStateListOf<String>() }
+    var activePanel by rememberSaveable { mutableStateOf("") }
+    var panelLoading by remember { mutableStateOf(false) }
+    var memoryQuery by rememberSaveable { mutableStateOf("") }
+    var memoryResults by remember { mutableStateOf<List<String>>(emptyList()) }
+    var memorySummary by remember { mutableStateOf("Memory has not been checked yet.") }
+    val managedAgents = remember { mutableStateListOf<JarvisAgent>() }
+    val availableTools = remember { mutableStateListOf<JarvisTool>() }
+    var panelError by remember { mutableStateOf("") }
     val turns = remember { mutableStateListOf<ChatTurn>().apply { addAll(initialTurns) } }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
@@ -213,6 +221,152 @@ private fun OpenJarvisScreen(
                     }
                 }
                 Text(status, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                listOf("Agents", "Tools", "Memory").forEach { label ->
+                    FilterChip(
+                        selected = activePanel == label,
+                        onClick = {
+                            activePanel = if (activePanel == label) "" else label
+                            panelError = ""
+                            if (activePanel == "Agents" || activePanel == "Tools" || activePanel == "Memory") {
+                                panelLoading = true
+                                scope.launch {
+                                    try {
+                                        when (activePanel) {
+                                            "Agents" -> {
+                                                managedAgents.clear()
+                                                managedAgents.addAll(OpenJarvisApi.listAgents(serverUrl, apiKey.trim()))
+                                            }
+                                            "Tools" -> {
+                                                availableTools.clear()
+                                                availableTools.addAll(OpenJarvisApi.listTools(serverUrl, apiKey.trim()))
+                                            }
+                                            "Memory" -> {
+                                                val stats = OpenJarvisApi.memoryStats(serverUrl, apiKey.trim())
+                                                memorySummary = "${stats.entries} entries · ${stats.backend} · ${stats.status}"
+                                            }
+                                        }
+                                    } catch (error: Exception) {
+                                        panelError = error.message ?: "Unable to load this OpenJarvis feature"
+                                    } finally {
+                                        panelLoading = false
+                                    }
+                                }
+                            }
+                        },
+                        label = { Text(label) }
+                    )
+                }
+            }
+            if (activePanel.isNotBlank()) {
+                Card(Modifier.fillMaxWidth().heightIn(max = 220.dp)) {
+                    Column(Modifier.fillMaxWidth().padding(10.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(activePanel, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                            TextButton(onClick = {
+                                panelLoading = true
+                                scope.launch {
+                                    try {
+                                        when (activePanel) {
+                                            "Agents" -> {
+                                                managedAgents.clear()
+                                                managedAgents.addAll(OpenJarvisApi.listAgents(serverUrl, apiKey.trim()))
+                                            }
+                                            "Tools" -> {
+                                                availableTools.clear()
+                                                availableTools.addAll(OpenJarvisApi.listTools(serverUrl, apiKey.trim()))
+                                            }
+                                            "Memory" -> {
+                                                val stats = OpenJarvisApi.memoryStats(serverUrl, apiKey.trim())
+                                                memorySummary = "${stats.entries} entries · ${stats.backend} · ${stats.status}"
+                                            }
+                                        }
+                                        panelError = ""
+                                    } catch (error: Exception) {
+                                        panelError = error.message ?: "Refresh failed"
+                                    } finally { panelLoading = false }
+                                }
+                            }, enabled = !panelLoading) { Text("Refresh") }
+                        }
+                        if (panelLoading) {
+                            LinearProgressIndicator(Modifier.fillMaxWidth())
+                        } else if (panelError.isNotBlank()) {
+                            Text(panelError, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                        } else when (activePanel) {
+                            "Agents" -> {
+                                if (managedAgents.isEmpty()) Text("No managed agents found or the server has no Agent Manager configured.")
+                                else LazyColumn(Modifier.heightIn(max = 145.dp)) {
+                                    items(managedAgents, key = { it.id }) { agent ->
+                                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                                            Column(Modifier.weight(1f)) {
+                                                Text(agent.name, style = MaterialTheme.typography.bodyMedium)
+                                                Text("${agent.type} · ${agent.status}", style = MaterialTheme.typography.bodySmall)
+                                            }
+                                            TextButton(onClick = {
+                                                panelLoading = true
+                                                scope.launch {
+                                                    try {
+                                                        OpenJarvisApi.setAgentPaused(serverUrl, apiKey.trim(), agent, agent.status != "paused")
+                                                        managedAgents.clear()
+                                                        managedAgents.addAll(OpenJarvisApi.listAgents(serverUrl, apiKey.trim()))
+                                                    } catch (error: Exception) {
+                                                        panelError = error.message ?: "Agent action failed"
+                                                    } finally { panelLoading = false }
+                                                }
+                                            }, enabled = !panelLoading) {
+                                                Text(if (agent.status == "paused") "Resume" else "Pause")
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            "Tools" -> {
+                                if (availableTools.isEmpty()) Text("No tools returned by the server.")
+                                else LazyColumn(Modifier.heightIn(max = 145.dp)) {
+                                    items(availableTools, key = { it.name }) { tool ->
+                                        Column(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+                                            Text(tool.name, style = MaterialTheme.typography.bodyMedium)
+                                            Text("${tool.category} · ${tool.description}", style = MaterialTheme.typography.bodySmall, maxLines = 2)
+                                        }
+                                    }
+                                }
+                            }
+                            "Memory" -> {
+                                Text(memorySummary, style = MaterialTheme.typography.bodySmall)
+                                OutlinedTextField(
+                                    value = memoryQuery,
+                                    onValueChange = { memoryQuery = it },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true,
+                                    label = { Text("Search long-term memory") },
+                                    trailingIcon = {
+                                        TextButton(onClick = {
+                                            if (memoryQuery.isNotBlank()) {
+                                                panelLoading = true
+                                                scope.launch {
+                                                    try {
+                                                        memoryResults = OpenJarvisApi.searchMemory(serverUrl, apiKey.trim(), memoryQuery.trim())
+                                                        panelError = ""
+                                                    } catch (error: Exception) {
+                                                        panelError = error.message ?: "Memory search failed"
+                                                    } finally { panelLoading = false }
+                                                }
+                                            }
+                                        }, enabled = !panelLoading && memoryQuery.isNotBlank()) { Text("Search") }
+                                    }
+                                )
+                                if (memoryResults.isNotEmpty()) {
+                                    LazyColumn(Modifier.heightIn(max = 80.dp)) {
+                                        items(memoryResults) { result ->
+                                            Text(result, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(vertical = 3.dp))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
             Spacer(Modifier.height(8.dp))
             LazyColumn(
