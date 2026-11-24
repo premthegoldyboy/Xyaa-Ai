@@ -87,6 +87,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 WakeWordService.ACTION_STATE -> {
                     val serviceActive = intent.getBooleanExtra(WakeWordService.EXTRA_ACTIVE, false)
                     wakeWordEnabled.value = serviceActive || wakeWordArmed.value
+                    intent.getStringExtra(WakeWordService.EXTRA_STATUS)?.let { liveVoiceStatus.value = it }
                 }
                 WakeWordService.ACTION_USER_STOP -> {
                     wakeWordArmed.value = false
