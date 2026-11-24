@@ -1,6 +1,10 @@
 package org.openjarvis.android
 
 import android.os.Bundle
+import android.content.Intent
+import android.speech.RecognizerIntent
+import android.speech.tts.TextToSpeech
+import java.util.Locale
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
@@ -11,6 +15,8 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -27,6 +33,8 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -73,8 +81,15 @@ private object ApiKeyVault {
 }
 
 class MainActivity : ComponentActivity() {
+    private var speechEngine: TextToSpeech? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        speechEngine = TextToSpeech(this) { result ->
+            if (result == TextToSpeech.SUCCESS) {
+                speechEngine?.language = Locale.getDefault()
+            }
+        }
         val prefs = getSharedPreferences("openjarvis_android", MODE_PRIVATE)
         val savedKey = runCatching {
             val encrypted = prefs.getString("key_enc", "").orEmpty()
@@ -103,6 +118,9 @@ class MainActivity : ComponentActivity() {
                     initialModel = prefs.getString("model", "") ?: "",
                     initialKey = savedKey,
                     initialTurns = restoredTurns,
+                    onSpeak = { text ->
+                        speechEngine?.speak(text.take(4000), TextToSpeech.QUEUE_FLUSH, null, "openjarvis-response")
+                    },
                     onSave = { url, model, key ->
                         val (iv, encryptedKey) = runCatching { ApiKeyVault.encrypt(key) }.getOrDefault("" to "")
                         prefs.edit()
@@ -123,6 +141,13 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    override fun onDestroy() {
+        speechEngine?.stop()
+        speechEngine?.shutdown()
+        speechEngine = null
+        super.onDestroy()
+    }
 }
 
 @Composable
@@ -131,6 +156,7 @@ private fun OpenJarvisScreen(
     initialModel: String,
     initialKey: String,
     initialTurns: List<ChatTurn>,
+    onSpeak: (String) -> Unit,
     onSave: (String, String, String) -> Unit,
     onTurnsChanged: (List<ChatTurn>) -> Unit
 ) {
@@ -138,6 +164,7 @@ private fun OpenJarvisScreen(
     var model by rememberSaveable { mutableStateOf(initialModel) }
     var apiKey by rememberSaveable { mutableStateOf(initialKey) }
     var draft by rememberSaveable { mutableStateOf("") }
+    var streamingEnabled by rememberSaveable { mutableStateOf(true) }
     var status by remember { mutableStateOf("Connect to your OpenJarvis server to begin.") }
     var busy by remember { mutableStateOf(false) }
     var modelsLoading by remember { mutableStateOf(false) }
@@ -154,6 +181,12 @@ private fun OpenJarvisScreen(
     val turns = remember { mutableStateListOf<ChatTurn>().apply { addAll(initialTurns) } }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
+    val voiceInput = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            val spoken = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
+            if (!spoken.isNullOrBlank()) draft = listOf(draft, spoken).filter { it.isNotBlank() }.joinToString(" ")
+        }
+    }
 
     LaunchedEffect(turns.size) {
         onTurnsChanged(turns.toList())
@@ -178,8 +211,23 @@ private fun OpenJarvisScreen(
         onSave(normalizedUrl, model.trim(), apiKey)
         scope.launch {
             try {
-                val answer = OpenJarvisApi.complete(normalizedUrl, apiKey.trim(), model.trim(), turns.toList())
-                turns.add(ChatTurn("assistant", answer))
+                if (streamingEnabled) {
+                    val assistantIndex = turns.size
+                    turns.add(ChatTurn("assistant", ""))
+                    val answer = OpenJarvisApi.completeStreaming(
+                        normalizedUrl, apiKey.trim(), model.trim(), turns.dropLast(1)
+                    ) { delta ->
+                        withContext(Dispatchers.Main) {
+                            if (assistantIndex < turns.size) {
+                                turns[assistantIndex] = ChatTurn("assistant", turns[assistantIndex].content + delta)
+                            }
+                        }
+                    }
+                    turns[assistantIndex] = ChatTurn("assistant", answer)
+                } else {
+                    val answer = OpenJarvisApi.complete(normalizedUrl, apiKey.trim(), model.trim(), turns.toList())
+                    turns.add(ChatTurn("assistant", answer))
+                }
                 status = "Response received"
             } catch (error: Exception) {
                 status = "Request failed: " + (error.message ?: "unknown error")
@@ -284,6 +332,12 @@ private fun OpenJarvisScreen(
                     }
                 }
                 Text(status, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Text("Stream replies", style = MaterialTheme.typography.bodySmall)
+                Switch(checked = streamingEnabled, onCheckedChange = { streamingEnabled = it })
+                Spacer(Modifier.weight(1f))
+                Text("Voice input uses your device speech service", style = MaterialTheme.typography.labelSmall)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
                 listOf("Agents", "Tools", "Memory").forEach { label ->
@@ -455,6 +509,9 @@ private fun OpenJarvisScreen(
                                 Text(if (isUser) "You" else "OpenJarvis", style = MaterialTheme.typography.labelMedium)
                                 Spacer(Modifier.height(4.dp))
                                 Text(turn.content)
+                                if (!isUser && turn.content.isNotBlank()) {
+                                    TextButton(onClick = { onSpeak(turn.content) }) { Text("Read aloud") }
+                                }
                             }
                         }
                     }
@@ -476,7 +533,19 @@ private fun OpenJarvisScreen(
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                 keyboardActions = KeyboardActions(onSend = { sendMessage() })
             )
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
+                OutlinedButton(
+                    onClick = {
+                        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                            putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
+                            putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak to OpenJarvis")
+                        }
+                        runCatching { voiceInput.launch(intent) }
+                            .onFailure { status = "Voice input is unavailable on this device" }
+                    },
+                    enabled = !busy
+                ) { Text("Speak") }
                 Button(onClick = { sendMessage() }, enabled = !busy && draft.isNotBlank()) {
                     Text(if (busy) "Thinking…" else "Send")
                 }
