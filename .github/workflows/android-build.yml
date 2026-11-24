@@ -1,7 +1,7 @@
 name: Android build
 on:
   push:
-    branches: [main, "xyaa/**"]
+    branches: [main, "xyaa/**", "fix/**"]
   pull_request:
     branches: [main]
   workflow_dispatch:

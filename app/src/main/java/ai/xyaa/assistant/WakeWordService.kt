@@ -36,7 +36,9 @@ class WakeWordService : Service() {
         const val ACTION_STOP = "ai.xyaa.assistant.STOP_WAKE_WORD"
         const val ACTION_WAKE_DETECTED = "ai.xyaa.assistant.WAKE_DETECTED"
         const val ACTION_STATE = "ai.xyaa.assistant.WAKE_WORD_STATE"
+        const val ACTION_USER_STOP = "ai.xyaa.assistant.WAKE_WORD_USER_STOP"
         const val EXTRA_ACTIVE = "active"
+        const val EXTRA_STATUS = "status"
         const val EXTRA_START_LIVE_VOICE = "start_live_voice"
         private const val CHANNEL = "xyaa_wake_word"
         private const val ALERT_CHANNEL = "xyaa_wake_word_alerts"
@@ -53,7 +55,6 @@ class WakeWordService : Service() {
     @Volatile private var record: AudioRecord? = null
     @Volatile private var worker: Thread? = null
     @Volatile private var spotter: KeywordSpotter? = null
-    @Volatile private var lastAlertAt = 0L
 
     override fun onCreate() {
         super.onCreate()
@@ -62,7 +63,9 @@ class WakeWordService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_STOP) {
+        if (intent?.action == ACTION_STOP ||
+            !getSharedPreferences("xyaa_voice", MODE_PRIVATE).getBoolean("wake_word_armed", false)
+        ) {
             stopSelf()
             return START_NOT_STICKY
         }
@@ -70,9 +73,9 @@ class WakeWordService : Service() {
             worker = Thread({ runDetector() }, "XYAA-WakeWord")
                 .apply { start() }
         }
-        // A microphone service must only run after an explicit foreground user action.
-        // Do not let Android restart it in the background after process death.
-        return START_NOT_STICKY
+        // The persisted preference is written only after the user explicitly enables wake word.
+        // Sticky restart lets Android recover the detector after reclaiming the app process.
+        return START_STICKY
     }
 
     private fun runDetector() {
@@ -84,7 +87,7 @@ class WakeWordService : Service() {
             val joiner = File(dir, "joiner-epoch-13-avg-2-chunk-8-left-64.int8.onnx")
             val tokens = File(dir, "tokens.txt")
             val keywords = File(dir, "xyaa-keywords.txt").apply {
-                writeText("HH EY1 Z AY1 AH0 @XYAA\n")
+                writeText("HH EY1 Z AY1 AH0 @HEY_ZYAA\n")
             }
             check(encoder.isFile && decoder.isFile && joiner.isFile && tokens.isFile) {
                 "Wake-word model archive is missing required files."
@@ -137,22 +140,24 @@ class WakeWordService : Service() {
                     kws.decode(stream)
                     val result = kws.getResult(stream).keyword
                     if (result.isNotBlank()) {
+                        // One wake phrase opens one voice session. Release the microphone now;
+                        // MainActivity re-arms this service after Live Voice finishes if still enabled.
                         kws.reset(stream)
-                        val now = System.currentTimeMillis()
-                        if (now - lastAlertAt > 30_000L) {
-                            lastAlertAt = now
-                            sendBroadcast(Intent(ACTION_WAKE_DETECTED).setPackage(packageName))
-                            showWakeAlert()
-                            updateNotification("I heard Hey Zyaa · tap the alert to talk")
-                        }
+                        sendBroadcast(Intent(ACTION_WAKE_DETECTED).setPackage(packageName))
+                        showWakeAlert()
+                        stopping.set(true)
+                        break
                     }
                 }
             }
             stream.release()
             kws.release()
         } catch (error: Throwable) {
-            if (!stopping.get()) updateNotification("Wake word unavailable: ${error.message ?: "model or microphone error"}")
-            sendState(false)
+            if (!stopping.get()) {
+                val message = "Wake word unavailable: ${error.message ?: "model or microphone error"}"
+                updateNotification(message)
+                sendState(false, message)
+            } else sendState(false)
         } finally {
             stopping.set(true)
             sendState(false)
@@ -312,8 +317,10 @@ class WakeWordService : Service() {
         getSystemService(NotificationManager::class.java).notify(ALERT_NOTIFICATION_ID, alert)
     }
 
-    private fun sendState(active: Boolean) {
-        sendBroadcast(Intent(ACTION_STATE).setPackage(packageName).putExtra(EXTRA_ACTIVE, active))
+    private fun sendState(active: Boolean, status: String? = null) {
+        val event = Intent(ACTION_STATE).setPackage(packageName).putExtra(EXTRA_ACTIVE, active)
+        if (!status.isNullOrBlank()) event.putExtra(EXTRA_STATUS, status)
+        sendBroadcast(event)
     }
 
     private fun updateNotification(message: String) {
