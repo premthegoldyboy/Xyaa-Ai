@@ -6,7 +6,9 @@ A native Kotlin + Jetpack Compose client for the original OpenJarvis server. The
 
 - Connect to an OpenJarvis server using a configurable URL.
 - Discover and select chat models through `GET /v1/models`.
-- Chat through OpenJarvis's `POST /v1/chat/completions` API.
+- Chat through OpenJarvis's `POST /v1/chat/completions` API, with token-by-token Server-Sent Events streaming and a non-streaming fallback.
+- Dictate prompts through the Android speech recognition service when you tap Speak.
+- Read assistant replies aloud using Android's built-in text-to-speech engine.
 - Test server connectivity through `GET /health`.
 - Keep a local conversation history across app restarts.
 - Browse managed agents and pause/resume them when the server's Agent Manager is configured.
