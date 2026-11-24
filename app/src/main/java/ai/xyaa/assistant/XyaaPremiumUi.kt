@@ -827,7 +827,12 @@ private fun ResearchPage(
         if (report.isNullOrBlank()) InfoCard("No report yet", "Your completed report and returned sources will appear here.", "WAITING")
         else Surface(color = Panel, shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(15.dp)) {
-                Text(AssistantTextFormatter.forDisplay(report), color = White, fontSize = 12.sp, lineHeight = 18.sp)
+                // Keep research Markdown intact so headings, lists, code, links, and tables
+                // use the same renderer as chat instead of flattening the report into plain text.
+                MarkdownMessage(
+                    raw = AssistantTextFormatter.forRichDisplay(report),
+                    modifier = Modifier.fillMaxWidth()
+                )
                 Spacer(Modifier.height(12.dp))
                 OutlinedButton(onClick = { onShare(report) }, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Default.Share, null); Spacer(Modifier.width(8.dp)); Text("Share / export report")
