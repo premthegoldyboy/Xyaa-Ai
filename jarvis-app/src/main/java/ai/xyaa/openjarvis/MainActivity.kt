@@ -35,6 +35,7 @@ class MainActivity : ComponentActivity() {
 
 private data class ChatLine(val text: String, val user: Boolean)
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun JarvisScreen(
     initialUrl: String, initialModel: String, initialKey: String,
