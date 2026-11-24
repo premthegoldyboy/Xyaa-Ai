@@ -437,6 +437,20 @@ private fun OpenJarvisScreen(
                                             }, enabled = !panelLoading) {
                                                 Text(if (agent.status == "paused") "Resume" else "Pause")
                                             }
+                                            TextButton(onClick = {
+                                                panelLoading = true
+                                                scope.launch {
+                                                    try {
+                                                        status = "Agent run: " + OpenJarvisApi.runAgent(serverUrl, apiKey.trim(), agent)
+                                                        managedAgents.clear()
+                                                        managedAgents.addAll(OpenJarvisApi.listAgents(serverUrl, apiKey.trim()))
+                                                    } catch (error: Exception) {
+                                                        panelError = error.message ?: "Unable to start agent"
+                                                    } finally { panelLoading = false }
+                                                }
+                                            }, enabled = !panelLoading && agent.status != "running" && agent.status != "paused") {
+                                                Text("Run")
+                                            }
                                         }
                                     }
                                 }
