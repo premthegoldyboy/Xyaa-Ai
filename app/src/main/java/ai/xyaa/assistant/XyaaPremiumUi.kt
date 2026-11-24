@@ -134,6 +134,8 @@ internal fun XyaaPremiumApp(
     liveVoiceActive: Boolean,
     liveVoiceStatus: String,
     liveTranscript: String,
+    wakeVoiceOverlay: Boolean,
+    onDismissWakeVoiceOverlay: () -> Unit,
     onStartLiveVoice: () -> Unit,
     onStopLiveVoice: () -> Unit,
     wakeWordEnabled: Boolean,
@@ -251,6 +253,36 @@ internal fun XyaaPremiumApp(
             text = { Text("This removes XYAA's locally saved conversation context from this device.", color = Muted) },
             confirmButton = { TextButton(onClick = { onClearMemory(); confirmClear = false }) { Text("Clear memory", color = Color(0xFFFF8C9B)) } },
             dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("Cancel", color = Muted) } }
+        )
+
+        // Android does not permit ordinary apps to pop an Activity over another app.
+        // Show this voice surface as soon as XYAA is foregrounded from the wake notification.
+        if (wakeVoiceOverlay) AlertDialog(
+            onDismissRequest = onDismissWakeVoiceOverlay,
+            containerColor = Panel2,
+            title = { Text("Hey, I'm listening", color = White, fontWeight = FontWeight.Bold) },
+            text = {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    EnergyOrb(Modifier.fillMaxWidth().height(150.dp), liveVoiceActive)
+                    Text(
+                        if (liveVoiceActive) "Speak naturally. XYAA is listening for your command."
+                        else liveVoiceStatus,
+                        color = Cyan, fontSize = 12.sp, lineHeight = 18.sp
+                    )
+                    if (liveTranscript.isNotBlank()) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(liveTranscript.takeLast(900), color = Muted, fontSize = 11.sp, lineHeight = 16.sp)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = onDismissWakeVoiceOverlay) { Text("Hide", color = Cyan) }
+            },
+            dismissButton = {
+                TextButton(onClick = { onStopLiveVoice(); onDismissWakeVoiceOverlay() }) {
+                    Text("End voice", color = Color(0xFFFF8C9B))
+                }
+            }
         )
     }
 }
