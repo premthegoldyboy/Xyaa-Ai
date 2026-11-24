@@ -288,6 +288,14 @@ test('wake detection opens a foreground voice dialog and notification tap starts
 });
 
 
+test('Live Voice can be ended by a short spoken stop command', () => {
+  const activity = read('app/src/main/java/ai/xyaa/assistant/MainActivity.kt');
+  assert.match(activity, /stop listening\|end voice\|goodbye\|that's all/);
+  assert.match(activity, /if \(fromUser && endVoiceCommand\.matches\(spoken\)\)/);
+  assert.match(activity, /stopLiveVoice\(\)/);
+  assert.match(activity, /Voice ended · say Hey Zyaa again/);
+});
+
 test('notification Stop action clears the persisted wake-word preference', () => {
   const receiver = read('app/src/main/java/ai/xyaa/assistant/WakeWordStopReceiver.kt');
   const activity = read('app/src/main/java/ai/xyaa/assistant/MainActivity.kt');
