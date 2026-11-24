@@ -1,22 +1,16 @@
-# XYAA
+# OpenJarvis Android
 
-XYAA is a browser-based voice assistant PWA.
+This branch is the OpenJarvis-based application track. The upstream OpenJarvis project is included as a Git submodule at `openjarvis/` so its original source, architecture, agents, tools, memory, and licensing remain intact rather than being re-created from XYAA code.
 
-## Publish
-In GitHub open **Settings → Pages**, select **Deploy from a branch**, choose `main` and `/(root)`, then save. Open the published URL in Chrome and use **Add to Home screen**.
+## Upstream source
 
-## Setup
-1. Open Settings and paste your Gemini API key.
-2. Choose a listening language and speech voice.
-3. Allow microphone access.
-4. Tap the microphone or type a message. Hands-free mode listens repeatedly while the page stays open.
+- Repository: https://github.com/open-jarvis/OpenJarvis
+- Pinned upstream commit: ae36ac97e9adcd55e8cf6e98b6274948ab28134c
 
-## Features
-- Gemini-powered chat with short conversation history.
-- Speech input/output with language and voice selection.
-- Google and YouTube search, opening web URLs, phone dialler and WhatsApp launch, timer and time.
-- Input validation and confirmation before call/WhatsApp actions.
-- Versioned service-worker cache and PWA install metadata.
+## Clone
 
-## Limitations and security
-Speech recognition differs by browser. Hands-free listening and timers are not guaranteed when the browser is backgrounded, the page is closed, or the phone suspends it. This app cannot run a permanent wake word or change Android settings. The Gemini API key is stored in browser local storage, which is not a secure secret vault; do not share the browser profile or key.
+```bash
+git clone --branch openjarvis-android-alternative --recurse-submodules https://github.com/premthegoldyboy/Xyaa-Ai.git
+```
+
+The Android client/integration will be implemented separately from the upstream Python project. XYAA's `main` branch is intentionally unaffected.
