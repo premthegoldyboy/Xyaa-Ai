@@ -139,6 +139,8 @@ internal fun XyaaPremiumApp(
     onStartLiveVoice: () -> Unit,
     onStopLiveVoice: () -> Unit,
     wakeWordEnabled: Boolean,
+    assistantRoleHeld: Boolean,
+    onRequestAssistantRole: () -> Unit,
     onStartWakeWord: () -> Unit,
     onStopWakeWord: () -> Unit
 ) {
@@ -240,6 +242,7 @@ internal fun XyaaPremiumApp(
                         SettingsPage(apiKey, { apiKey = it }, groqKey, { groqKey = it },
                             deepSeekKey, { deepSeekKey = it }, tavilyKey, { tavilyKey = it },
                             firecrawlKey, { firecrawlKey = it }, neuralVoiceStatus, onDownloadNeuralVoice, wakeWordEnabled,
+                            assistantRoleHeld, onRequestAssistantRole,
                             onStartWakeWord, onStopWakeWord,
                             { onSaveKey(apiKey.trim()); onSaveProviderKeys(groqKey.trim(), deepSeekKey.trim(), tavilyKey.trim(), firecrawlKey.trim()) },
                             { confirmClear = true })
@@ -1128,6 +1131,7 @@ private fun SettingsPage(
     gemini: String, setGemini: (String)->Unit, groq: String, setGroq: (String)->Unit,
     deep: String, setDeep: (String)->Unit, tavily: String, setTavily: (String)->Unit,
     firecrawl: String, setFirecrawl: (String)->Unit, voiceStatus: String, downloadVoice: ()->Unit, wake: Boolean, startWake: ()->Unit, stopWake: ()->Unit,
+    assistantRoleHeld: Boolean, requestAssistantRole: () -> Unit,
     save: ()->Unit, clear: ()->Unit
 ) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal=18.dp)) {
@@ -1151,6 +1155,26 @@ private fun SettingsPage(
         InfoCard("Hey XYAA wake word",if(wake) "On-device wake-word service is enabled." else "On-device wake-word service is disabled.",if(wake) "ON" else "OFF",{
             TextButton(onClick={if(wake)stopWake() else startWake()}) { Text(if(wake)"Turn off" else "Turn on",color=Cyan) }
         })
+        Spacer(Modifier.height(12.dp))
+        InfoCard(
+            "Android default assistant",
+            if (assistantRoleHeld) "XYAA is selected as your device assistant. Use your phone's assistant gesture to launch it."
+            else "Set XYAA as your Android assistant to launch it with the system assistant gesture, where your device supports one.",
+            if (assistantRoleHeld) "ACTIVE" else "OPTIONAL"
+        )
+        OutlinedButton(
+            onClick = requestAssistantRole,
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !assistantRoleHeld
+        ) {
+            Icon(Icons.Default.Assistant, null)
+            Spacer(Modifier.width(8.dp))
+            Text(if (assistantRoleHeld) "XYAA is your default assistant" else "Set XYAA as default assistant")
+        }
+        Text(
+            "Android will show its own confirmation screen. You can keep or restore another assistant at any time in system settings. The available gesture depends on your phone manufacturer and navigation settings.",
+            color = Muted, fontSize = 10.sp, lineHeight = 14.sp
+        )
         Spacer(Modifier.height(18.dp)); Label("PRIVACY & MEMORY")
         InfoCard("Conversation memory","Recent turns are stored locally. Relevant context may be sent with your prompt to the AI provider you configured when you chat.","LOCAL")
         OutlinedButton(onClick=clear,modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.outlinedButtonColors(contentColor=Color(0xFFFF8C9B))) {
