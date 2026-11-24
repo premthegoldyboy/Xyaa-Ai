@@ -148,9 +148,18 @@ class SkillEngine(private val context: Context) {
         if (lower.startsWith("translate ")) return webSearch(text)
         if (lower.startsWith("news")) return webSearch("latest news")
         if (lower.startsWith("open website ")) {
-            val host = text.substringAfter("open website ").trim()
-            val url = if (host.startsWith("http")) host else "https://$host"
-            return launch(Intent(Intent.ACTION_VIEW, Uri.parse(url)), "Opening website.")
+            val requested = text.substringAfter("open website ").trim()
+            if (requested.isBlank() || requested.any { it.isWhitespace() || it.isISOControl() }) {
+                return "Please provide a valid website address."
+            }
+            val candidate = if (requested.contains("://")) requested else "https://$requested"
+            val address = runCatching { Uri.parse(candidate) }.getOrNull()
+            val scheme = address?.scheme?.lowercase(Locale.ROOT)
+            if (address == null || scheme !in setOf("http", "https") ||
+                address.host.isNullOrBlank() || address.userInfo != null) {
+                return "Please use a valid website address beginning with https:// or http://."
+            }
+            return launch(Intent(Intent.ACTION_VIEW, address), "Opening website.")
         }
         val open = Regex("^(?:please )?(?:open|launch|start) (.+?)[.!?]?$", RegexOption.IGNORE_CASE).find(text)
         if (open != null) return openApp(open.groupValues[1].trim())
