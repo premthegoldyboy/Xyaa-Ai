@@ -53,7 +53,6 @@ class WakeWordService : Service() {
     @Volatile private var record: AudioRecord? = null
     @Volatile private var worker: Thread? = null
     @Volatile private var spotter: KeywordSpotter? = null
-    @Volatile private var lastAlertAt = 0L
 
     override fun onCreate() {
         super.onCreate()
@@ -137,14 +136,13 @@ class WakeWordService : Service() {
                     kws.decode(stream)
                     val result = kws.getResult(stream).keyword
                     if (result.isNotBlank()) {
+                        // One wake phrase opens one voice session. Stop listening immediately;
+                        // the user must explicitly re-enable the wake word after this interaction.
                         kws.reset(stream)
-                        val now = System.currentTimeMillis()
-                        if (now - lastAlertAt > 30_000L) {
-                            lastAlertAt = now
-                            sendBroadcast(Intent(ACTION_WAKE_DETECTED).setPackage(packageName))
-                            showWakeAlert()
-                            updateNotification("I heard Hey Zyaa · tap the alert to talk")
-                        }
+                        sendBroadcast(Intent(ACTION_WAKE_DETECTED).setPackage(packageName))
+                        showWakeAlert()
+                        stopping.set(true)
+                        break
                     }
                 }
             }
