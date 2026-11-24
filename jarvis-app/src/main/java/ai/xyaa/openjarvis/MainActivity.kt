@@ -12,6 +12,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -68,9 +70,11 @@ private fun JarvisScreen(
                     busy = true
                     scope.launch {
                         val result = runCatching {
-                            OpenJarvisClient(url, model, apiKey).chat(messages.filter { it.text != q }.takeLast(20).map {
-                                (if (it.user) "user" else "assistant") to it.text
-                            } + listOf("user" to q))
+                            withContext(Dispatchers.IO) {
+                                OpenJarvisClient(url, model, apiKey).chat(messages.filter { it.text != q }.takeLast(20).map {
+                                    (if (it.user) "user" else "assistant") to it.text
+                                } + listOf("user" to q))
+                            }
                         }
                         result.onSuccess { answer ->
                             messages = messages + ChatLine(answer, false)
