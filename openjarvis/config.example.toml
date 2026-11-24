@@ -1,0 +1,17 @@
+# Starter config reference. OpenJarvis reads ~/.openjarvis/config.toml.
+# Copy/adapt this using the current upstream configuration schema.
+[engine]
+default = "ollama"
+
+[engine.ollama]
+base_url = "http://localhost:11434"
+
+[agent]
+default = "orchestrator"
+context_from_memory = true
+
+[server]
+host = "0.0.0.0"
+port = 8000
+
+# Set authentication using OPENJARVIS_API_KEY in the server environment.
