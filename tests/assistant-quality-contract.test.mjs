@@ -266,3 +266,14 @@ test('app launching handles a package disappearing between discovery and launch'
   assert.match(skills, /That app is no longer available/);
   assert.doesNotMatch(skills, /getLaunchIntentForPackage\(matches\.first\(\)\.activityInfo\.packageName\)!!/);
 });
+
+
+test('external intents are launched without package-visibility preflight false negatives', () => {
+  const skills = read('app/src/main/java/ai/xyaa/assistant/SkillEngine.kt');
+  const management = read('app/src/main/java/ai/xyaa/assistant/ManagementAgent.kt');
+  assert.match(skills, /context\.startActivity\(intent\)/);
+  assert.match(skills, /ActivityNotFoundException/);
+  assert.doesNotMatch(skills, /intent\.resolveActivity\(context\.packageManager\)/);
+  assert.match(management, /app\.startActivity\(intent\)/);
+  assert.doesNotMatch(management, /intent\.resolveActivity\(app\.packageManager\)/);
+});
