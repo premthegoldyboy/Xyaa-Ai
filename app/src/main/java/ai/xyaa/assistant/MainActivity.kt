@@ -174,7 +174,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 onStopWakeWord = ::stopWakeWord
             )
         }
-        if (intent?.getBooleanExtra(WakeWordService.EXTRA_START_LIVE_VOICE, false) == true) {
+        if (intent?.getBooleanExtra(WakeWordService.EXTRA_START_LIVE_VOICE, false) == true || intent?.action == Intent.ACTION_ASSIST) {
             wakeVoiceOverlayVisible.value = true
             window.decorView.postDelayed({ startLiveVoice() }, 700)
         }
