@@ -305,7 +305,9 @@ private fun HomePage(
             MainButton("Speak", Icons.Default.Mic, Modifier.weight(1f), true, voice)
         }
         InfoCard("Live voice", if (live) liveStatus else "Start a real-time conversation with XYAA.", if (live) "ACTIVE" else "READY")
-        InfoCard("Hey XYAA wake word", if (wake) "On-device wake-word service is running." else "On-device wake-word service is off.",
+        InfoCard("Hey XYAA wake word",
+            if (wake) "Armed · pauses during Live Voice and automatically resumes when the conversation ends."
+            else "On-device wake-word service is off.",
             if (wake) "ON" else "OFF", {
                 TextButton(onClick = { if (wake) stopWake() else startWake() }) {
                     Text(if (wake) "Stop" else "Enable", color = Cyan)
