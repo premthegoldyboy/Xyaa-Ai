@@ -85,7 +85,7 @@ class WakeWordService : Service() {
             val joiner = File(dir, "joiner-epoch-13-avg-2-chunk-8-left-64.int8.onnx")
             val tokens = File(dir, "tokens.txt")
             val keywords = File(dir, "xyaa-keywords.txt").apply {
-                writeText("HH EY1 Z AY1 AH0 @XYAA\n")
+                writeText("HH EY1 Z AY1 AH0 @HEY_ZYAA\n")
             }
             check(encoder.isFile && decoder.isFile && joiner.isFile && tokens.isFile) {
                 "Wake-word model archive is missing required files."
