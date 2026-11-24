@@ -288,6 +288,14 @@ test('wake detection opens a foreground voice dialog and notification tap starts
 });
 
 
+test('notification Stop action clears the persisted wake-word preference', () => {
+  const receiver = read('app/src/main/java/ai/xyaa/assistant/WakeWordStopReceiver.kt');
+  const activity = read('app/src/main/java/ai/xyaa/assistant/MainActivity.kt');
+  assert.match(receiver, /putBoolean\("wake_word_armed", false\)/);
+  assert.match(receiver, /ACTION_USER_STOP/);
+  assert.match(activity, /WakeWordService\.ACTION_USER_STOP -> \{[\s\S]*?wakeWordArmed\.value = false[\s\S]*?wakeWordEnabled\.value = false/);
+});
+
 test('wake word remains armed across a voice session and automatically re-arms after it closes', () => {
   const activity = read('app/src/main/java/ai/xyaa/assistant/MainActivity.kt');
   assert.match(activity, /wakeWordArmed = mutableStateOf\(false\)/);
