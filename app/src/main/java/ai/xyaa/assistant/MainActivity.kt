@@ -92,12 +92,6 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                     wakeWordArmed.value = false
                     wakeWordEnabled.value = false
                 }
-                WakeWordService.ACTION_WAKE_DETECTED -> {
-                    wakeVoiceOverlayVisible.value = true
-                    liveVoiceStatus.value = "Wake word detected · opening live voice…"
-                    pauseWakeWordForVoice()
-                    window.decorView.postDelayed({ startLiveVoice() }, 600)
-                }
             }
         }
     }
@@ -187,7 +181,6 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         if (!wakeReceiverRegistered) {
             val filter = IntentFilter().apply {
                 addAction(WakeWordService.ACTION_STATE)
-                addAction(WakeWordService.ACTION_WAKE_DETECTED)
             }
             ContextCompat.registerReceiver(this, wakeWordReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
             wakeReceiverRegistered = true
