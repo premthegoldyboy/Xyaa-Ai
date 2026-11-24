@@ -28,15 +28,22 @@ class XyaaVoiceInteractionSessionService : VoiceInteractionSessionService() {
 private class XyaaVoiceInteractionSession(
     context: android.content.Context
 ) : VoiceInteractionSession(context) {
+    override fun onPrepareShow(args: Bundle?, showFlags: Int) {
+        super.onPrepareShow(args, showFlags)
+        // XYAA renders its own assistant Activity; do not create a competing session window.
+        setUiEnabled(false)
+    }
+
     override fun onShow(args: Bundle?, showFlags: Int) {
         super.onShow(args, showFlags)
         // Use Android's assistant-activity launch path so XYAA appears above the current app.
-        // MainActivity owns the existing Gemini Live session and microphone permission flow.
+        // Keep the session alive while the assistant Activity is presented; hiding the session
+        // immediately here can dismiss the system-owned assistant surface during handoff.
         val launch = Intent(context, MainActivity::class.java).apply {
+            action = Intent.ACTION_ASSIST
             putExtra(WakeWordService.EXTRA_START_LIVE_VOICE, true)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         }
         startAssistantActivity(launch)
-        hide()
     }
 }
