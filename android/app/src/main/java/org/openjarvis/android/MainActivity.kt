@@ -50,6 +50,9 @@ private fun OpenJarvisScreen(
     var draft by rememberSaveable { mutableStateOf("") }
     var status by remember { mutableStateOf("Configure your OpenJarvis server to begin.") }
     var busy by remember { mutableStateOf(false) }
+    var modelsLoading by remember { mutableStateOf(false) }
+    var modelsExpanded by remember { mutableStateOf(false) }
+    val availableModels = remember { mutableStateListOf<String>() }
     val turns = remember { mutableStateListOf<ChatTurn>() }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
@@ -68,7 +71,7 @@ private fun OpenJarvisScreen(
                 OutlinedTextField(apiKey, { apiKey = it }, label = { Text("API key (optional)") },
                     singleLine = true, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.weight(1f))
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 TextButton(onClick = {
                     onSave(serverUrl, model, apiKey)
                     scope.launch {
@@ -76,7 +79,37 @@ private fun OpenJarvisScreen(
                         status = runCatching { OpenJarvisApi.health(serverUrl, apiKey) }
                             .getOrElse { "Connection failed: " + (it.message ?: "unknown error") }
                     }
-                }, enabled = !busy) { Text("Save & test") }
+                }, enabled = !busy && !modelsLoading) { Text("Save & test") }
+                Box {
+                    TextButton(onClick = {
+                        modelsLoading = true
+                        scope.launch {
+                            try {
+                                val found = OpenJarvisApi.listModels(serverUrl, apiKey)
+                                availableModels.clear()
+                                availableModels.addAll(found)
+                                status = if (found.isEmpty()) "Server returned no models" else "Found " + found.size + " model(s)"
+                                if (found.isNotEmpty()) modelsExpanded = true
+                            } catch (error: Exception) {
+                                status = "Model lookup failed: " + (error.message ?: "unknown error")
+                            } finally { modelsLoading = false }
+                        }
+                    }, enabled = !busy && !modelsLoading) {
+                        Text(if (modelsLoading) "Loading…" else "Load models")
+                    }
+                    DropdownMenu(expanded = modelsExpanded, onDismissRequest = { modelsExpanded = false }) {
+                        availableModels.forEach { item ->
+                            DropdownMenuItem(
+                                text = { Text(item) },
+                                onClick = {
+                                    model = item
+                                    modelsExpanded = false
+                                    onSave(serverUrl, model, apiKey)
+                                }
+                            )
+                        }
+                    }
+                }
                 Text(status, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
             }
             Spacer(Modifier.height(8.dp))
