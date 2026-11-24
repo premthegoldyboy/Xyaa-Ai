@@ -268,6 +268,25 @@ test('app launching handles a package disappearing between discovery and launch'
 });
 
 
+
+test('Hey Zyaa wake detection is one-shot and releases the microphone until manually re-enabled', () => {
+  const wake = read('app/src/main/java/ai/xyaa/assistant/WakeWordService.kt');
+  assert.match(wake, /if \(result\.isNotBlank\(\)\)[\s\S]*?showWakeAlert\(\)[\s\S]*?stopping\.set\(true\)[\s\S]*?break/);
+  assert.doesNotMatch(wake, /lastAlertAt|30_000L/);
+  assert.match(wake, /Tap to start talking with XYAA/);
+  assert.match(wake, /return START_NOT_STICKY/);
+});
+
+test('wake detection opens a foreground voice dialog and notification tap starts the live session', () => {
+  const activity = read('app/src/main/java/ai/xyaa/assistant/MainActivity.kt');
+  const ui = read('app/src/main/java/ai/xyaa/assistant/XyaaPremiumUi.kt');
+  assert.match(activity, /WakeWordService\.ACTION_WAKE_DETECTED -> \{[\s\S]*?wakeVoiceOverlayVisible\.value = true[\s\S]*?startLiveVoice\(\)/);
+  assert.match(activity, /EXTRA_START_LIVE_VOICE, false\)\) \{[\s\S]*?wakeVoiceOverlayVisible\.value = true[\s\S]*?startLiveVoice\(\)/);
+  assert.match(ui, /if \(wakeVoiceOverlay\) AlertDialog/);
+  assert.match(ui, /Speak naturally\. XYAA is listening for your command\./);
+  assert.match(ui, /End voice/);
+});
+
 test('external intents are launched without package-visibility preflight false negatives', () => {
   const skills = read('app/src/main/java/ai/xyaa/assistant/SkillEngine.kt');
   const management = read('app/src/main/java/ai/xyaa/assistant/ManagementAgent.kt');
