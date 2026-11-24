@@ -137,8 +137,8 @@ class WakeWordService : Service() {
                     kws.decode(stream)
                     val result = kws.getResult(stream).keyword
                     if (result.isNotBlank()) {
-                        // One wake phrase opens one voice session. Stop listening immediately;
-                        // the user must explicitly re-enable the wake word after this interaction.
+                        // One wake phrase opens one voice session. Release the microphone now;
+                        // MainActivity re-arms this service after Live Voice finishes if still enabled.
                         kws.reset(stream)
                         sendBroadcast(Intent(ACTION_WAKE_DETECTED).setPackage(packageName))
                         showWakeAlert()
