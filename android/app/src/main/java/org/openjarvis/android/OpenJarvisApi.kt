@@ -70,6 +70,85 @@ object OpenJarvisApi {
                 .ifBlank { "The server returned an empty response." }
         }
 
+    suspend fun completeStreaming(
+        baseUrl: String,
+        apiKey: String,
+        model: String,
+        turns: List<ChatTurn>,
+        onDelta: suspend (String) -> Unit
+    ): String = withContext(Dispatchers.IO) {
+        val messages = JSONArray().apply {
+            turns.forEach { put(JSONObject().put("role", it.role).put("content", it.content)) }
+        }
+        val body = JSONObject().put("model", model)
+            .put("messages", messages).put("temperature", 0.7)
+            .put("max_tokens", 1024).put("stream", true)
+        val conn = connection(baseUrl, "/v1/chat/completions", apiKey).apply {
+            requestMethod = "POST"
+            doOutput = true
+            setRequestProperty("Content-Type", "application/json")
+            setRequestProperty("Accept", "text/event-stream")
+        }
+        val answer = StringBuilder()
+        try {
+            conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+            val status = conn.responseCode
+            if (status !in 200..299) {
+                val error = conn.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                val detail = runCatching { JSONObject(error).optString("detail") }.getOrNull()
+                throw IllegalStateException(detail?.takeIf { it.isNotBlank() } ?: "OpenJarvis returned HTTP " + status)
+            }
+            conn.inputStream.bufferedReader(Charsets.UTF_8).useLines { lines ->
+                lines.forEach { line ->
+                    if (!line.startsWith("data:")) return@forEach
+                    val payload = line.removePrefix("data:").trim()
+                    if (payload.isEmpty() || payload == "[DONE]") return@forEach
+                    val delta = runCatching {
+                        val choices = JSONObject(payload).optJSONArray("choices") ?: JSONArray()
+                        val choice = choices.optJSONObject(0) ?: return@runCatching ""
+                        choice.optJSONObject("delta")?.optString("content").orEmpty()
+                    }.getOrDefault("")
+                    if (delta.isNotEmpty()) {
+                        answer.append(delta)
+                        kotlinx.coroutines.runBlocking { onDelta(delta) }
+                    }
+                }
+            }
+            if (answer.isEmpty()) throw IllegalStateException("OpenJarvis stream ended without text")
+            answer.toString()
+        } finally {
+            conn.disconnect()
+        }
+    }
+
+    suspend fun speechHealth(baseUrl: String, apiKey: String): JSONObject = withContext(Dispatchers.IO) {
+        JSONObject(request(baseUrl, "/v1/speech/health", apiKey))
+    }
+
+    suspend fun textToSpeech(baseUrl: String, apiKey: String, text: String): ByteArray =
+        withContext(Dispatchers.IO) {
+            val conn = connection(baseUrl, "/v1/speech/synthesize", apiKey).apply {
+                requestMethod = "POST"
+                doOutput = true
+                setRequestProperty("Content-Type", "application/json")
+                setRequestProperty("Accept", "audio/wav")
+            }
+            try {
+                conn.outputStream.use {
+                    it.write(JSONObject().put("text", text.take(5000)).toString().toByteArray(Charsets.UTF_8))
+                }
+                val status = conn.responseCode
+                if (status !in 200..299) {
+                    val error = conn.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                    val detail = runCatching { JSONObject(error).optString("detail") }.getOrNull()
+                    throw IllegalStateException(detail?.takeIf { it.isNotBlank() } ?: "Speech synthesis returned HTTP " + status)
+                }
+                conn.inputStream.use { it.readBytes() }
+            } finally {
+                conn.disconnect()
+            }
+        }
+
     suspend fun listModels(baseUrl: String, apiKey: String): List<String> = withContext(Dispatchers.IO) {
         val data = JSONObject(request(baseUrl, "/v1/models", apiKey)).optJSONArray("data") ?: JSONArray()
         buildList {
