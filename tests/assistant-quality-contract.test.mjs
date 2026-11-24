@@ -250,3 +250,19 @@ test('website launching accepts only safe HTTP(S) URLs with a valid host', () =>
   assert.match(skills, /address\.userInfo != null/);
   assert.match(skills, /requested\.any \{ it\.isWhitespace\(\) \|\| it\.isISOControl\(\) \}/);
 });
+
+
+test('PDF folder import tolerates read-only grants and isolated document-provider failures', () => {
+  const management = read('app/src/main/java/ai/xyaa/assistant/ManagementAgent.kt');
+  assert.match(management, /takePersistableUriPermission\(treeUri, Intent\.FLAG_GRANT_READ_URI_PERMISSION\)/);
+  assert.match(management, /getColumnIndex\(Document\.COLUMN_DOCUMENT_ID\)/);
+  assert.match(management, /runCatching \{\s*app\.contentResolver\.query\(childrenUri/);
+  assert.match(management, /onSuccess \{ imported\+\+ \}/);
+});
+
+test('app launching handles a package disappearing between discovery and launch', () => {
+  const skills = read('app/src/main/java/ai/xyaa/assistant/SkillEngine.kt');
+  assert.match(skills, /resolvedLaunchIntent = context\.packageManager\.getLaunchIntentForPackage/);
+  assert.match(skills, /That app is no longer available/);
+  assert.doesNotMatch(skills, /getLaunchIntentForPackage\(matches\.first\(\)\.activityInfo\.packageName\)!!/);
+});
