@@ -98,8 +98,7 @@ class NeuralVoiceEngine(private val context: Context, private val onStatus: (Str
                 }
                 val stagedModel = File(staging, MODEL_DIR)
                 check(hasModelFiles(stagedModel)) { "Downloaded archive is missing required Kokoro files" }
-                modelDir.deleteRecursively()
-                check(stagedModel.renameTo(modelDir)) { "Could not finalize the downloaded Kokoro model." }
+                installStagedModel(stagedModel, modelDir)
                 staging.deleteRecursively()
                 archive.delete()
                 engine = createEngine()
@@ -362,6 +361,27 @@ class NeuralVoiceEngine(private val context: Context, private val onStatus: (Str
 
     private fun hasModelFiles(directory: File = modelDir) = File(directory, "model.onnx").isFile && File(directory, "voices.bin").isFile &&
         File(directory, "tokens.txt").isFile && File(directory, "espeak-ng-data").isDirectory
+
+    /** Promote a validated model without discarding the last working installation on failure. */
+    private fun installStagedModel(stagedModel: File, target: File) {
+        val backup = File(target.parentFile, "${target.name}.previous")
+        if (backup.exists() && !target.exists()) {
+            check(backup.renameTo(target)) { "Could not restore the previous voice model." }
+        } else if (backup.exists()) {
+            backup.deleteRecursively()
+        }
+        val hadPrevious = target.exists()
+        if (hadPrevious) check(target.renameTo(backup)) { "Could not preserve the previous voice model." }
+        try {
+            check(stagedModel.renameTo(target)) { "Could not finalize the downloaded Kokoro model." }
+        } catch (error: Throwable) {
+            if (hadPrevious && backup.exists()) {
+                check(backup.renameTo(target)) { "Model installation failed and the previous voice model could not be restored." }
+            }
+            throw error
+        }
+        if (backup.exists()) backup.deleteRecursively()
+    }
 
     private fun extractSafely(
         archive: File,
