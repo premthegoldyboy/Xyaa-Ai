@@ -277,16 +277,21 @@ test('Hey Zyaa wake detection is one-shot and releases the microphone until manu
   assert.match(wake, /return START_NOT_STICKY/);
 });
 
-test('wake detection opens a foreground voice dialog and notification tap starts the live session', () => {
+test('background Hey Zyaa detection asks Android to show XYAA as the active assistant', () => {
+  const service = read('app/src/main/java/ai/xyaa/assistant/XyaaVoiceInteraction.kt');
   const activity = read('app/src/main/java/ai/xyaa/assistant/MainActivity.kt');
   const ui = read('app/src/main/java/ai/xyaa/assistant/XyaaPremiumUi.kt');
-  assert.match(activity, /WakeWordService\.ACTION_WAKE_DETECTED -> \{[\s\S]*?wakeVoiceOverlayVisible\.value = true[\s\S]*?startLiveVoice\(\)/);
-  assert.match(activity, /EXTRA_START_LIVE_VOICE, false\) == true \|\| intent\?\.action == Intent\.ACTION_ASSIST\) \{[\s\S]*?wakeVoiceOverlayVisible\.value = true[\s\S]*?startLiveVoice\(\)/);
-  assert.match(ui, /if \(wakeVoiceOverlay\) AlertDialog/);
-  assert.match(ui, /Speak naturally\. XYAA is listening for your command\./);
+  assert.match(service, /WakeWordService\\.ACTION_WAKE_DETECTED/);
+  assert.match(service, /showSession\\([\\s\\S]*?EXTRA_START_LIVE_VOICE/);
+  assert.match(service, /startArmedWakeWordIfPermitted\\(\\)/);
+  assert.match(service, /ContextCompat\\.startForegroundService/);
+  assert.match(service, /startAssistantActivity\\(launch\\)/);
+  assert.doesNotMatch(activity, /ACTION_WAKE_DETECTED ->/);
+  assert.match(activity, /EXTRA_START_LIVE_VOICE, false\\) == true \\|\\| intent\\?\\.action == Intent\\.ACTION_ASSIST\\)[\\s\\S]*?wakeVoiceOverlayVisible\\.value = true[\\s\\S]*?startLiveVoice\\(\\)/);
+  assert.match(ui, /if \\(wakeVoiceOverlay\\) AlertDialog/);
+  assert.match(ui, /Speak naturally\\. XYAA is listening for your command\\./);
   assert.match(ui, /End voice/);
 });
-
 
 test('Live Voice can be ended by a short spoken stop command', () => {
   const activity = read('app/src/main/java/ai/xyaa/assistant/MainActivity.kt');
