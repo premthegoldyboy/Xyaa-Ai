@@ -5,6 +5,8 @@ on:
     branches: [openjarvis-android-alternative]
     paths:
       - "android/**"
+      - "openjarvis"
+      - ".gitmodules"
       - ".github/workflows/openjarvis-android.yml"
   pull_request:
     branches: [openjarvis-android-alternative]
