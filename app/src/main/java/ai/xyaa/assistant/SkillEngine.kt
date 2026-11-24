@@ -189,9 +189,14 @@ class SkillEngine(private val context: Context) {
 
     private fun launch(intent: Intent, success: String): String = try {
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        if (intent.resolveActivity(context.packageManager) == null) "That feature isn't available on this device."
-        else { context.startActivity(intent); success }
-    } catch (_: Exception) { "Android couldn't open that feature." }
+        // Avoid resolveActivity preflights: package visibility can hide valid handlers.
+        context.startActivity(intent)
+        success
+    } catch (_: android.content.ActivityNotFoundException) {
+        "That feature isn't available on this device."
+    } catch (_: Exception) {
+        "Android couldn't open that feature."
+    }
 }
 
 private object Arithmetic {
