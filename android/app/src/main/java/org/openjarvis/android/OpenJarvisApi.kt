@@ -10,6 +10,7 @@ import java.net.URL
 data class ChatTurn(val role: String, val content: String)
 data class JarvisAgent(val id: String, val name: String, val type: String, val status: String)
 data class JarvisTool(val name: String, val description: String, val category: String, val configured: Boolean)
+data class JarvisTask(val id: String, val description: String, val status: String)
 data class MemoryStats(val entries: Int, val backend: String, val status: String)
 
 object OpenJarvisApi {
@@ -110,7 +111,7 @@ object OpenJarvisApi {
                     }.getOrDefault("")
                     if (delta.isNotEmpty()) {
                         answer.append(delta)
-                        kotlinx.coroutines.runBlocking { onDelta(delta) }
+                        onDelta(delta)
                     }
                 }
             }
@@ -184,6 +185,49 @@ object OpenJarvisApi {
                 request(baseUrl, "/v1/managed-agents/${agent.id}/run", apiKey, "POST")
             )
             response.optString("status", "running")
+        }
+
+    suspend fun createAgent(baseUrl: String, apiKey: String, name: String, agentType: String): JarvisAgent =
+        withContext(Dispatchers.IO) {
+            val json = JSONObject(request(
+                baseUrl, "/v1/managed-agents", apiKey, "POST",
+                JSONObject().put("name", name).put("agent_type", agentType)
+            ))
+            JarvisAgent(
+                id = json.optString("id"),
+                name = json.optString("name", name),
+                type = json.optString("agent_type", agentType),
+                status = json.optString("status", "idle")
+            ).also {
+                if (it.id.isBlank()) throw IllegalStateException("Server created an agent but returned no ID")
+            }
+        }
+
+    suspend fun listAgentTasks(baseUrl: String, apiKey: String, agent: JarvisAgent): List<JarvisTask> =
+        withContext(Dispatchers.IO) {
+            val data = JSONObject(request(baseUrl, "/v1/managed-agents/${agent.id}/tasks", apiKey))
+                .optJSONArray("tasks") ?: JSONArray()
+            buildList {
+                for (index in 0 until data.length()) {
+                    val item = data.optJSONObject(index) ?: continue
+                    val id = item.optString("id", item.optString("task_id"))
+                    if (id.isNotBlank()) add(
+                        JarvisTask(
+                            id = id,
+                            description = item.optString("description", "Task"),
+                            status = item.optString("status", "unknown")
+                        )
+                    )
+                }
+            }
+        }
+
+    suspend fun createAgentTask(baseUrl: String, apiKey: String, agent: JarvisAgent, description: String) =
+        withContext(Dispatchers.IO) {
+            request(
+                baseUrl, "/v1/managed-agents/${agent.id}/tasks", apiKey, "POST",
+                JSONObject().put("description", description)
+            )
         }
 
     suspend fun setAgentPaused(baseUrl: String, apiKey: String, agent: JarvisAgent, pause: Boolean) =
