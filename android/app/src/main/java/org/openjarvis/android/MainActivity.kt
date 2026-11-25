@@ -122,14 +122,21 @@ class MainActivity : ComponentActivity() {
                         speechEngine?.speak(text.take(4000), TextToSpeech.QUEUE_FLUSH, null, "openjarvis-response")
                     },
                     onSave = { url, model, key ->
-                        val (iv, encryptedKey) = runCatching { ApiKeyVault.encrypt(key) }.getOrDefault("" to "")
                         prefs.edit()
                             .putString("url", url)
                             .putString("model", model)
-                            .putString("key_iv", iv)
-                            .putString("key_enc", encryptedKey)
-                            .remove("key")
                             .apply()
+                        if (key.isBlank()) {
+                            prefs.edit().remove("key_iv").remove("key_enc").remove("key").apply()
+                        } else {
+                            runCatching { ApiKeyVault.encrypt(key) }.onSuccess { (iv, encryptedKey) ->
+                                prefs.edit()
+                                    .putString("key_iv", iv)
+                                    .putString("key_enc", encryptedKey)
+                                    .remove("key")
+                                    .apply()
+                            }
+                        }
                     },
                     onTurnsChanged = { turns ->
                         val json = JSONArray().apply {
