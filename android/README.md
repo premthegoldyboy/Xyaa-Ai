@@ -48,3 +48,18 @@ GitHub Actions builds the debug APK on pushes to this branch. The APK is publish
 - The app currently permits cleartext HTTP to support local development and LAN server connections. Do not expose an unauthenticated server to the public internet.
 - The optional API key is encrypted at rest with Android Keystore. Use a unique server credential and rotate it if the device is lost.
 - Agent pause/resume controls affect the server-side managed agent. Review your server's security and capability policy before enabling powerful tools.
+
+
+## Android interaction bridge
+
+The opt-in Accessibility service now supports generic foreground UI interaction:
+- Read visible text exposed by the active app's accessibility tree.
+- Tap a visible element by its text label.
+- Enter text into a matching editable field using `label|text` (or the first visible editable field when no label matches).
+- Scroll the active view and perform directional swipes.
+- Launch an installed app by package name.
+- Use Android Back, Home, Notifications and Quick Settings global actions.
+
+To use these features, enable **OpenJarvis device controls** in Android Accessibility settings. Android will show that the service can inspect screen content and perform gestures. The service does not continuously upload or store screen contents; the current screen summary is returned only when the user invokes Read screen. Some apps intentionally expose little or no accessibility text, and Android/app security surfaces may block interaction.
+
+These are currently explicit in-app controls, not yet autonomous AI tool calls. The next integration step is to connect structured OpenJarvis action plans to this bridge with result verification and confirmation for consequential actions. Hands-free wake-word operation is not implemented yet.
