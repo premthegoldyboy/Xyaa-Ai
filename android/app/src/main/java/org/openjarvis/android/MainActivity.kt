@@ -224,7 +224,16 @@ private fun OpenJarvisScreen(
         onSave(normalizedUrl, model.trim(), apiKey)
         scope.launch {
             try {
-                if (streamingEnabled) {
+                if (DeviceControlAccessibilityService.isEnabled()) {
+                    val assistantIndex = turns.size
+                    turns.add(ChatTurn("assistant", ""))
+                    val answer = OpenJarvisApi.completeWithDeviceTools(
+                        normalizedUrl, apiKey.trim(), model.trim(), turns.dropLast(1)
+                    ) { progress ->
+                        scope.launch(Dispatchers.Main) { status = progress }
+                    }
+                    turns[assistantIndex] = ChatTurn("assistant", answer)
+                } else if (streamingEnabled) {
                     val assistantIndex = turns.size
                     turns.add(ChatTurn("assistant", ""))
                     val answer = OpenJarvisApi.completeStreaming(
