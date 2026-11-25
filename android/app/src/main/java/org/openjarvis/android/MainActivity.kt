@@ -32,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -167,6 +168,7 @@ private fun OpenJarvisScreen(
     onSave: (String, String, String) -> Unit,
     onTurnsChanged: (List<ChatTurn>) -> Unit
 ) {
+    val context = LocalContext.current
     var serverUrl by rememberSaveable { mutableStateOf(initialUrl) }
     var model by rememberSaveable { mutableStateOf(initialModel) }
     var apiKey by rememberSaveable { mutableStateOf(initialKey) }
@@ -264,6 +266,36 @@ private fun OpenJarvisScreen(
                         status = "Conversation cleared"
                     }
                 }, enabled = !busy && turns.isNotEmpty()) { Text("Clear chat") }
+            }
+            Spacer(Modifier.height(12.dp))
+            var deviceControlStatus by remember { mutableStateOf("Device controls require Accessibility access.") }
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.fillMaxWidth().padding(10.dp)) {
+                    Text("Phone controls", style = MaterialTheme.typography.titleMedium)
+                    Text("Enable the explicitly scoped accessibility service to use basic navigation.", style = MaterialTheme.typography.bodySmall)
+                    Text(deviceControlStatus, style = MaterialTheme.typography.labelSmall)
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        TextButton(onClick = {
+                            runCatching {
+                                context.startActivity(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                            }.onFailure { deviceControlStatus = "Unable to open Accessibility settings." }
+                        }) { Text("Enable access") }
+                        TextButton(onClick = {
+                            deviceControlStatus = if (DeviceControlAccessibilityService.perform(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK)) "Back action sent." else "Enable the OpenJarvis accessibility service first."
+                        }) { Text("Back") }
+                        TextButton(onClick = {
+                            deviceControlStatus = if (DeviceControlAccessibilityService.perform(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_HOME)) "Home action sent." else "Enable the OpenJarvis accessibility service first."
+                        }) { Text("Home") }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        TextButton(onClick = {
+                            deviceControlStatus = if (DeviceControlAccessibilityService.perform(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_NOTIFICATIONS)) "Notifications opened." else "Enable the OpenJarvis accessibility service first."
+                        }) { Text("Notifications") }
+                        TextButton(onClick = {
+                            deviceControlStatus = if (DeviceControlAccessibilityService.perform(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_QUICK_SETTINGS)) "Quick Settings opened." else "Enable the OpenJarvis accessibility service first."
+                        }) { Text("Quick settings") }
+                    }
+                }
             }
             Spacer(Modifier.height(12.dp))
             OutlinedTextField(
