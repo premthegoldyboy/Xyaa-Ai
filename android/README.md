@@ -11,12 +11,12 @@ A native Kotlin + Jetpack Compose client for the original OpenJarvis server. The
 - Read assistant replies aloud using Android's built-in text-to-speech engine.
 - Test server connectivity through `GET /health`.
 - Keep a local conversation history across app restarts.
-- Browse managed agents and pause/resume them when the server's Agent Manager is configured.
+- Browse and create managed agents, run/pause/resume them, and inspect/create their tasks when the server's Agent Manager is configured.
 - Browse the server's registered tools.
 - View memory backend status and search long-term memory.
 - Encrypt the saved API key with an AES-GCM key held by Android Keystore.
 
-The Android client currently uses non-streaming chat. Agent and tool operations execute on the configured OpenJarvis server; the app does not pretend those operations run locally.
+Chat supports OpenAI-compatible Server-Sent Events streaming, with a non-streaming fallback. Agent and tool operations execute on the configured OpenJarvis server; the app does not pretend those operations run locally.
 
 ## Backend setup
 
