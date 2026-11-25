@@ -34,10 +34,14 @@ class DeviceControlAccessibilityService : AccessibilityService() {
         val root = rootInActiveWindow ?: return false
         return try {
             val matches = root.findAccessibilityNodeInfosByText(query)
-            val target = matches.firstOrNull { it.isVisibleToUser && (it.isClickable || it.parent?.isClickable == true) }
-                ?: matches.firstOrNull { it.isVisibleToUser }
-            val clickable = if (target?.isClickable == true) target else target?.parent
-            clickable?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true
+            try {
+                val target = matches.firstOrNull { it.isVisibleToUser && (it.isClickable || it.parent?.isClickable == true) }
+                    ?: matches.firstOrNull { it.isVisibleToUser }
+                val clickable = if (target?.isClickable == true) target else target?.parent
+                clickable?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true
+            } finally {
+                matches.forEach { it.recycle() }
+            }
         } finally {
             root.recycle()
         }
@@ -47,13 +51,18 @@ class DeviceControlAccessibilityService : AccessibilityService() {
         if (query.isBlank()) return false
         val root = rootInActiveWindow ?: return false
         return try {
-            val target = root.findAccessibilityNodeInfosByText(query)
-                .firstOrNull { it.isVisibleToUser && it.isEditable }
+            val matches = root.findAccessibilityNodeInfosByText(query)
+            val target = matches.firstOrNull { it.isVisibleToUser && it.isEditable }?.let { AccessibilityNodeInfo.obtain(it) }
                 ?: findEditable(root)
-            target?.performAction(
-                AccessibilityNodeInfo.ACTION_SET_TEXT,
-                Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, value) }
-            ) == true
+            try {
+                target?.performAction(
+                    AccessibilityNodeInfo.ACTION_SET_TEXT,
+                    Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, value) }
+                ) == true
+            } finally {
+                target?.recycle()
+                matches.forEach { it.recycle() }
+            }
         } finally {
             root.recycle()
         }
@@ -74,11 +83,15 @@ class DeviceControlAccessibilityService : AccessibilityService() {
     private fun scroll(forward: Boolean): Boolean {
         val root = rootInActiveWindow ?: return false
         return try {
-            val target = findScrollable(root) ?: root
-            target.performAction(
-                if (forward) AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
-                else AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
-            )
+            val target = findScrollable(root)
+            try {
+                (target ?: root).performAction(
+                    if (forward) AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
+                    else AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
+                )
+            } finally {
+                target?.recycle()
+            }
         } finally {
             root.recycle()
         }
