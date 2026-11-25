@@ -173,6 +173,10 @@ private fun OpenJarvisScreen(
     var activePanel by rememberSaveable { mutableStateOf("") }
     var panelLoading by remember { mutableStateOf(false) }
     var memoryQuery by rememberSaveable { mutableStateOf("") }
+    var newAgentName by rememberSaveable { mutableStateOf("") }
+    var selectedAgentId by rememberSaveable { mutableStateOf("") }
+    var agentTasks by remember { mutableStateOf<List<JarvisTask>>(emptyList()) }
+    var taskDraft by rememberSaveable { mutableStateOf("") }
     var memoryResults by remember { mutableStateOf<List<String>>(emptyList()) }
     var memorySummary by remember { mutableStateOf("Memory has not been checked yet.") }
     val managedAgents = remember { mutableStateListOf<JarvisAgent>() }
@@ -415,41 +419,115 @@ private fun OpenJarvisScreen(
                             Text(panelError, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                         } else when (activePanel) {
                             "Agents" -> {
-                                if (managedAgents.isEmpty()) Text("No managed agents found or the server has no Agent Manager configured.")
-                                else LazyColumn(Modifier.heightIn(max = 145.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    OutlinedTextField(
+                                        value = newAgentName,
+                                        onValueChange = { newAgentName = it },
+                                        label = { Text("New agent name") },
+                                        singleLine = true,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    TextButton(
+                                        onClick = {
+                                            val name = newAgentName.trim()
+                                            if (name.isNotBlank()) {
+                                                panelLoading = true
+                                                scope.launch {
+                                                    try {
+                                                        OpenJarvisApi.createAgent(serverUrl, apiKey.trim(), name, "monitor_operative")
+                                                        newAgentName = ""
+                                                        managedAgents.clear()
+                                                        managedAgents.addAll(OpenJarvisApi.listAgents(serverUrl, apiKey.trim()))
+                                                        panelError = ""
+                                                    } catch (error: Exception) {
+                                                        panelError = error.message ?: "Agent creation failed"
+                                                    } finally { panelLoading = false }
+                                                }
+                                            }
+                                        },
+                                        enabled = !panelLoading && newAgentName.isNotBlank()
+                                    ) { Text("Create") }
+                                }
+                                if (managedAgents.isEmpty()) {
+                                    Text("No managed agents found. Create one above, if Agent Manager is enabled.")
+                                } else LazyColumn(Modifier.heightIn(max = 110.dp)) {
                                     items(managedAgents, key = { it.id }) { agent ->
-                                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                                            Column(Modifier.weight(1f)) {
-                                                Text(agent.name, style = MaterialTheme.typography.bodyMedium)
-                                                Text("${agent.type} · ${agent.status}", style = MaterialTheme.typography.bodySmall)
-                                            }
-                                            TextButton(onClick = {
-                                                panelLoading = true
-                                                scope.launch {
-                                                    try {
-                                                        OpenJarvisApi.setAgentPaused(serverUrl, apiKey.trim(), agent, agent.status != "paused")
-                                                        managedAgents.clear()
-                                                        managedAgents.addAll(OpenJarvisApi.listAgents(serverUrl, apiKey.trim()))
-                                                    } catch (error: Exception) {
-                                                        panelError = error.message ?: "Agent action failed"
-                                                    } finally { panelLoading = false }
+                                        Column(Modifier.fillMaxWidth()) {
+                                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                                                Column(Modifier.weight(1f)) {
+                                                    Text(agent.name, style = MaterialTheme.typography.bodyMedium)
+                                                    Text("${agent.type} · ${agent.status}", style = MaterialTheme.typography.bodySmall)
                                                 }
-                                            }, enabled = !panelLoading) {
-                                                Text(if (agent.status == "paused") "Resume" else "Pause")
-                                            }
-                                            TextButton(onClick = {
-                                                panelLoading = true
-                                                scope.launch {
-                                                    try {
-                                                        status = "Agent run: " + OpenJarvisApi.runAgent(serverUrl, apiKey.trim(), agent)
-                                                        managedAgents.clear()
-                                                        managedAgents.addAll(OpenJarvisApi.listAgents(serverUrl, apiKey.trim()))
-                                                    } catch (error: Exception) {
-                                                        panelError = error.message ?: "Unable to start agent"
-                                                    } finally { panelLoading = false }
+                                                TextButton(onClick = {
+                                                    panelLoading = true
+                                                    scope.launch {
+                                                        try {
+                                                            OpenJarvisApi.setAgentPaused(serverUrl, apiKey.trim(), agent, agent.status != "paused")
+                                                            managedAgents.clear()
+                                                            managedAgents.addAll(OpenJarvisApi.listAgents(serverUrl, apiKey.trim()))
+                                                        } catch (error: Exception) {
+                                                            panelError = error.message ?: "Agent action failed"
+                                                        } finally { panelLoading = false }
+                                                    }
+                                                }, enabled = !panelLoading) {
+                                                    Text(if (agent.status == "paused") "Resume" else "Pause")
                                                 }
-                                            }, enabled = !panelLoading && agent.status != "running" && agent.status != "paused") {
-                                                Text("Run")
+                                                TextButton(onClick = {
+                                                    panelLoading = true
+                                                    scope.launch {
+                                                        try {
+                                                            status = "Agent run: " + OpenJarvisApi.runAgent(serverUrl, apiKey.trim(), agent)
+                                                            managedAgents.clear()
+                                                            managedAgents.addAll(OpenJarvisApi.listAgents(serverUrl, apiKey.trim()))
+                                                        } catch (error: Exception) {
+                                                            panelError = error.message ?: "Unable to start agent"
+                                                        } finally { panelLoading = false }
+                                                    }
+                                                }, enabled = !panelLoading && agent.status != "running" && agent.status != "paused") {
+                                                    Text("Run")
+                                                }
+                                                TextButton(onClick = {
+                                                    selectedAgentId = agent.id
+                                                    panelLoading = true
+                                                    scope.launch {
+                                                        try {
+                                                            agentTasks = OpenJarvisApi.listAgentTasks(serverUrl, apiKey.trim(), agent)
+                                                            panelError = ""
+                                                        } catch (error: Exception) {
+                                                            panelError = error.message ?: "Unable to load agent tasks"
+                                                        } finally { panelLoading = false }
+                                                    }
+                                                }, enabled = !panelLoading) { Text("Tasks") }
+                                            }
+                                            if (selectedAgentId == agent.id) {
+                                                agentTasks.forEach { task ->
+                                                    Text("${task.status}: ${task.description}", style = MaterialTheme.typography.labelSmall)
+                                                }
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    OutlinedTextField(
+                                                        value = taskDraft,
+                                                        onValueChange = { taskDraft = it },
+                                                        label = { Text("Add task") },
+                                                        singleLine = true,
+                                                        modifier = Modifier.weight(1f)
+                                                    )
+                                                    TextButton(onClick = {
+                                                        val description = taskDraft.trim()
+                                                        if (description.isNotBlank()) {
+                                                            panelLoading = true
+                                                            scope.launch {
+                                                                try {
+                                                                    OpenJarvisApi.createAgentTask(serverUrl, apiKey.trim(), agent, description)
+                                                                    taskDraft = ""
+                                                                    agentTasks = OpenJarvisApi.listAgentTasks(serverUrl, apiKey.trim(), agent)
+                                                                    panelError = ""
+                                                                } catch (error: Exception) {
+                                                                    panelError = error.message ?: "Unable to create task"
+                                                                } finally { panelLoading = false }
+                                                            }
+                                                        }
+                                                    }, enabled = !panelLoading && taskDraft.isNotBlank()) { Text("Add") }
+                                                }
                                             }
                                         }
                                     }
