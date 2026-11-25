@@ -7,7 +7,6 @@ import android.graphics.Path
 import android.os.Bundle
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityEvent
-import android.view.accessibility.AccessibilityWindowInfo
 
 /**
  * User-enabled Android interaction bridge.
@@ -57,7 +56,11 @@ class DeviceControlAccessibilityService : AccessibilityService() {
                 }
                 if (blocked) return false
                 val clickable = if (target.isClickable) target else target.parent
-                clickable?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true
+                try {
+                    clickable?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true
+                } finally {
+                    if (clickable !== target) clickable?.recycle()
+                }
             } finally {
                 matches.forEach { it.recycle() }
             }
