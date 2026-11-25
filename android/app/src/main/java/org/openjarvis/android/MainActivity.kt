@@ -289,7 +289,7 @@ private fun OpenJarvisScreen(
                         onValueChange = { targetText = it },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
-                        label = { Text("Visible text / app package / text to enter") }
+                        label = { Text("Visible text / app name or package / text to enter") }
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         TextButton(onClick = {
