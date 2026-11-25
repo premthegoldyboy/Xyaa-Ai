@@ -50,7 +50,6 @@ class DeviceControlAccessibilityService : AccessibilityService() {
     }
 
     private fun setText(query: String, value: String): Boolean {
-        if (query.isBlank()) return false
         val root = rootInActiveWindow ?: return false
         return try {
             val matches = if (query.isBlank()) emptyList() else root.findAccessibilityNodeInfosByText(query)
