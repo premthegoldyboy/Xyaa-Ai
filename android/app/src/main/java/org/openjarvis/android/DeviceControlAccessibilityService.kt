@@ -31,6 +31,8 @@ class DeviceControlAccessibilityService : AccessibilityService() {
 
     private fun clickText(query: String): Boolean {
         if (query.isBlank()) return false
+        val sensitiveAction = Regex("(?i)\\b(send|submit|post|publish|buy|purchase|pay|transfer|delete|remove|erase|call|dial|confirm|place order)\\b")
+        if (sensitiveAction.containsMatchIn(query)) return false
         val root = rootInActiveWindow ?: return false
         return try {
             val matches = root.findAccessibilityNodeInfosByText(query)
@@ -51,7 +53,7 @@ class DeviceControlAccessibilityService : AccessibilityService() {
         if (query.isBlank()) return false
         val root = rootInActiveWindow ?: return false
         return try {
-            val matches = root.findAccessibilityNodeInfosByText(query)
+            val matches = if (query.isBlank()) emptyList() else root.findAccessibilityNodeInfosByText(query)
             val target = matches.firstOrNull { it.isVisibleToUser && it.isEditable }?.let { AccessibilityNodeInfo.obtain(it) }
                 ?: findEditable(root)
             try {
