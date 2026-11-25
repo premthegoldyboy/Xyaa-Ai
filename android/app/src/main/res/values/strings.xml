@@ -1,0 +1,3 @@
+<resources>
+    <string name="accessibility_service_description">Allows OpenJarvis to perform basic device navigation actions that you explicitly request, such as Back, Home, notifications, and Quick Settings. It does not read screen contents or record gestures.</string>
+</resources>
