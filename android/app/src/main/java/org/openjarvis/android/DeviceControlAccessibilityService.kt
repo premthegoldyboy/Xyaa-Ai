@@ -154,9 +154,27 @@ class DeviceControlAccessibilityService : AccessibilityService() {
         return dispatchGesture(gesture, null, null)
     }
 
-    private fun openApp(packageName: String): Boolean {
-        if (packageName.isBlank()) return false
-        val launch = packageManager.getLaunchIntentForPackage(packageName) ?: return false
+    private fun listApps(): String {
+        val launcher = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        val apps = packageManager.queryIntentActivities(launcher, 0)
+            .map { info ->
+                val label = info.loadLabel(packageManager).toString()
+                "$label | ${info.activityInfo.packageName}"
+            }
+            .distinct()
+            .sortedBy { it.lowercase() }
+            .take(100)
+        return apps.joinToString("\n").ifBlank { "No launchable apps were found." }
+    }
+
+    private fun openApp(identifier: String): Boolean {
+        if (identifier.isBlank()) return false
+        val launcher = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        val match = packageManager.queryIntentActivities(launcher, 0).firstOrNull { info ->
+            info.activityInfo.packageName.equals(identifier, ignoreCase = true) ||
+                info.loadLabel(packageManager).toString().equals(identifier, ignoreCase = true)
+        } ?: return false
+        val launch = packageManager.getLaunchIntentForPackage(match.activityInfo.packageName) ?: return false
         launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         startActivity(launch)
         return true
@@ -177,6 +195,7 @@ class DeviceControlAccessibilityService : AccessibilityService() {
         "scroll_down" -> result(scroll(true), "Scroll down")
         "swipe" -> result(swipe(value), "Swipe $value")
         "read_screen" -> screenSummary()
+        "list_apps" -> listApps()
         "open_app" -> result(openApp(value), "Open app: $value")
         else -> "Unknown action: $action"
     }
