@@ -8,6 +8,7 @@ A native Kotlin + Jetpack Compose client for the original OpenJarvis server. The
 - Discover and select chat models through `GET /v1/models`.
 - Chat through OpenJarvis's `POST /v1/chat/completions` API, with token-by-token Server-Sent Events streaming and a non-streaming fallback.
 - Dictate prompts through the Android speech recognition service when you tap Speak.
+- Optional, explicitly user-enabled Android Accessibility bridge for Back, Home, Notifications, and Quick Settings. It does not read screen content or capture gestures. Voice-triggered device actions and always-listening wake-word support are not implemented yet.
 - Read assistant replies aloud using Android's built-in text-to-speech engine.
 - Test server connectivity through `GET /health`.
 - Keep a local conversation history across app restarts.
