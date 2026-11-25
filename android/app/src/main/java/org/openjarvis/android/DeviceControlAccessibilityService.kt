@@ -138,7 +138,7 @@ class DeviceControlAccessibilityService : AccessibilityService() {
             val lines = mutableListOf<String>()
             fun visit(node: AccessibilityNodeInfo, depth: Int) {
                 if (depth > 18 || lines.size >= 120) return
-                if (node.isVisibleToUser) {
+                if (node.isVisibleToUser && !node.isPassword && !node.isEditable) {
                     val label = (node.text ?: node.contentDescription)?.toString()?.trim().orEmpty()
                     if (label.isNotBlank()) lines += label.take(240)
                 }
