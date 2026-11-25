@@ -122,6 +122,89 @@ object OpenJarvisApi {
         }
     }
 
+    /**
+     * Client-side OpenAI function-calling loop for the Android interaction bridge.
+     * The model proposes structured actions; the Android app executes them locally
+     * through the user-enabled Accessibility service and returns each result.
+     */
+    suspend fun completeWithDeviceTools(
+        baseUrl: String,
+        apiKey: String,
+        model: String,
+        turns: List<ChatTurn>,
+        onProgress: (String) -> Unit = {}
+    ): String = withContext(Dispatchers.IO) {
+        val messages = JSONArray().apply {
+            put(JSONObject().put("role", "system").put(
+                "content",
+                "You are OpenJarvis running on Android. You may use the supplied android_* functions to help with the user's requested phone task. Inspect the screen when needed, act only on the user's intent, and verify results by reading the screen. Do not send messages, publish posts, make calls, purchase, pay, transfer money, delete data, change security/privacy settings, or submit consequential forms. If such an action is requested, prepare it if possible and tell the user to complete the final action themselves."
+            ))
+            turns.forEach { put(JSONObject().put("role", it.role).put("content", it.content)) }
+        }
+        val tools = JSONArray().apply {
+            fun addTool(name: String, description: String, properties: JSONObject = JSONObject(), required: JSONArray = JSONArray()) {
+                put(JSONObject().put("type", "function").put("function",
+                    JSONObject().put("name", name).put("description", description)
+                        .put("parameters", JSONObject().put("type", "object")
+                            .put("properties", properties).put("required", required))
+                ))
+            }
+            addTool("android_read_screen", "Read visible text from the currently active app.")
+            addTool("android_tap_text", "Tap a visible UI element by its displayed text label.", JSONObject().put("text", JSONObject().put("type", "string")), JSONArray().put("text"))
+            addTool("android_enter_text", "Enter text into a visible editable field. Provide label when known; empty label uses the first visible editable field.", JSONObject().put("label", JSONObject().put("type", "string")).put("text", JSONObject().put("type", "string")), JSONArray().put("text"))
+            addTool("android_scroll", "Scroll the active app view up or down.", JSONObject().put("direction", JSONObject().put("type", "string").put("enum", JSONArray().put("up").put("down"))), JSONArray().put("direction"))
+            addTool("android_swipe", "Swipe the screen in a direction.", JSONObject().put("direction", JSONObject().put("type", "string").put("enum", JSONArray().put("up").put("down").put("left").put("right"))), JSONArray().put("direction"))
+            addTool("android_open_app", "Open an installed Android app using its package name.", JSONObject().put("package_name", JSONObject().put("type", "string")), JSONArray().put("package_name"))
+            addTool("android_back", "Navigate back.")
+            addTool("android_home", "Go to the Android home screen.")
+            addTool("android_notifications", "Open the notification shade.")
+            addTool("android_quick_settings", "Open Android Quick Settings.")
+        }
+
+        var rounds = 0
+        while (rounds < 6) {
+            val body = JSONObject().put("model", model).put("messages", messages)
+                .put("temperature", 0.2).put("max_tokens", 1200)
+                .put("stream", false).put("tools", tools)
+            val response = JSONObject(request(baseUrl, "/v1/chat/completions", apiKey, "POST", body))
+            val choices = response.optJSONArray("choices") ?: JSONArray()
+            val message = choices.optJSONObject(0)?.optJSONObject("message")
+                ?: throw IllegalStateException("OpenJarvis returned no assistant message")
+            val calls = message.optJSONArray("tool_calls")
+            if (calls == null || calls.length() == 0) {
+                return@withContext message.optString("content").ifBlank { "OpenJarvis completed the request without a text response." }
+            }
+
+            messages.put(JSONObject().put("role", "assistant")
+                .put("content", message.optString("content"))
+                .put("tool_calls", calls))
+            for (index in 0 until calls.length()) {
+                val call = calls.optJSONObject(index) ?: continue
+                val callId = call.optString("id")
+                val function = call.optJSONObject("function") ?: JSONObject()
+                val name = function.optString("name")
+                val args = runCatching { JSONObject(function.optString("arguments", "{}")) }.getOrDefault(JSONObject())
+                val result = when (name) {
+                    "android_read_screen" -> DeviceControlAccessibilityService.execute("read_screen")
+                    "android_tap_text" -> DeviceControlAccessibilityService.execute("click_text", args.optString("text"))
+                    "android_enter_text" -> DeviceControlAccessibilityService.execute("set_text", args.optString("label") + "|" + args.optString("text"))
+                    "android_scroll" -> DeviceControlAccessibilityService.execute(if (args.optString("direction") == "up") "scroll_up" else "scroll_down")
+                    "android_swipe" -> DeviceControlAccessibilityService.execute("swipe", args.optString("direction"))
+                    "android_open_app" -> DeviceControlAccessibilityService.execute("open_app", args.optString("package_name"))
+                    "android_back" -> DeviceControlAccessibilityService.execute("back")
+                    "android_home" -> DeviceControlAccessibilityService.execute("home")
+                    "android_notifications" -> DeviceControlAccessibilityService.execute("notifications")
+                    "android_quick_settings" -> DeviceControlAccessibilityService.execute("quick_settings")
+                    else -> "Unsupported Android action: $name"
+                }
+                onProgress("$name: $result")
+                messages.put(JSONObject().put("role", "tool").put("tool_call_id", callId).put("content", result))
+            }
+            rounds++
+        }
+        "I reached the action limit for this request. Tell me what happened on the phone and I can continue."
+    }
+
     suspend fun speechHealth(baseUrl: String, apiKey: String): JSONObject = withContext(Dispatchers.IO) {
         JSONObject(request(baseUrl, "/v1/speech/health", apiKey))
     }
