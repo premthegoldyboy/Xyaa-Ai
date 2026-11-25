@@ -268,32 +268,44 @@ private fun OpenJarvisScreen(
                 }, enabled = !busy && turns.isNotEmpty()) { Text("Clear chat") }
             }
             Spacer(Modifier.height(12.dp))
-            var deviceControlStatus by remember { mutableStateOf("Device controls require Accessibility access.") }
+            var deviceControlStatus by remember { mutableStateOf("Enable Accessibility access to interact with other apps.") }
+            var targetText by rememberSaveable { mutableStateOf("") }
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.fillMaxWidth().padding(10.dp)) {
-                    Text("Phone controls", style = MaterialTheme.typography.titleMedium)
-                    Text("Enable the explicitly scoped accessibility service to use basic navigation.", style = MaterialTheme.typography.bodySmall)
-                    Text(deviceControlStatus, style = MaterialTheme.typography.labelSmall)
+                    Text("Android interaction", style = MaterialTheme.typography.titleMedium)
+                    Text("User-enabled access lets OpenJarvis inspect visible UI labels, tap matching controls, enter text, scroll and swipe.", style = MaterialTheme.typography.bodySmall)
+                    Text(deviceControlStatus, style = MaterialTheme.typography.labelSmall, maxLines = 3)
+                    OutlinedTextField(
+                        value = targetText,
+                        onValueChange = { targetText = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        label = { Text("Visible text / app package / text to enter") }
+                    )
                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         TextButton(onClick = {
                             runCatching {
                                 context.startActivity(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                             }.onFailure { deviceControlStatus = "Unable to open Accessibility settings." }
                         }) { Text("Enable access") }
-                        TextButton(onClick = {
-                            deviceControlStatus = if (DeviceControlAccessibilityService.perform(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK)) "Back action sent." else "Enable the OpenJarvis accessibility service first."
-                        }) { Text("Back") }
-                        TextButton(onClick = {
-                            deviceControlStatus = if (DeviceControlAccessibilityService.perform(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_HOME)) "Home action sent." else "Enable the OpenJarvis accessibility service first."
-                        }) { Text("Home") }
+                        TextButton(onClick = { deviceControlStatus = DeviceControlAccessibilityService.execute("read_screen") }) { Text("Read screen") }
+                        TextButton(onClick = { deviceControlStatus = DeviceControlAccessibilityService.execute("click_text", targetText) }, enabled = targetText.isNotBlank()) { Text("Tap text") }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        TextButton(onClick = {
-                            deviceControlStatus = if (DeviceControlAccessibilityService.perform(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_NOTIFICATIONS)) "Notifications opened." else "Enable the OpenJarvis accessibility service first."
-                        }) { Text("Notifications") }
-                        TextButton(onClick = {
-                            deviceControlStatus = if (DeviceControlAccessibilityService.perform(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_QUICK_SETTINGS)) "Quick Settings opened." else "Enable the OpenJarvis accessibility service first."
-                        }) { Text("Quick settings") }
+                        TextButton(onClick = { deviceControlStatus = DeviceControlAccessibilityService.execute("set_text", targetText) }, enabled = targetText.contains("|")) { Text("Enter label|text") }
+                        TextButton(onClick = { deviceControlStatus = DeviceControlAccessibilityService.execute("open_app", targetText) }, enabled = targetText.contains(".")) { Text("Open package") }
+                        TextButton(onClick = { deviceControlStatus = DeviceControlAccessibilityService.execute("scroll_down") }) { Text("Scroll down") }
+                        TextButton(onClick = { deviceControlStatus = DeviceControlAccessibilityService.execute("scroll_up") }) { Text("Scroll up") }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        TextButton(onClick = { deviceControlStatus = DeviceControlAccessibilityService.execute("swipe", "left") }) { Text("Swipe left") }
+                        TextButton(onClick = { deviceControlStatus = DeviceControlAccessibilityService.execute("swipe", "right") }) { Text("Swipe right") }
+                        TextButton(onClick = { deviceControlStatus = DeviceControlAccessibilityService.execute("back") }) { Text("Back") }
+                        TextButton(onClick = { deviceControlStatus = DeviceControlAccessibilityService.execute("home") }) { Text("Home") }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        TextButton(onClick = { deviceControlStatus = DeviceControlAccessibilityService.execute("notifications") }) { Text("Notifications") }
+                        TextButton(onClick = { deviceControlStatus = DeviceControlAccessibilityService.execute("quick_settings") }) { Text("Quick settings") }
                     }
                 }
             }
