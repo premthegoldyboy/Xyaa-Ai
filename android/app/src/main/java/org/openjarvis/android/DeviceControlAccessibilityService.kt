@@ -31,15 +31,32 @@ class DeviceControlAccessibilityService : AccessibilityService() {
 
     private fun clickText(query: String): Boolean {
         if (query.isBlank()) return false
-        val sensitiveAction = Regex("(?i)\\b(send|submit|post|publish|buy|purchase|pay|transfer|delete|remove|erase|call|dial|confirm|place order)\\b")
-        if (sensitiveAction.containsMatchIn(query)) return false
         val root = rootInActiveWindow ?: return false
+        val sensitiveAction = Regex("(?i)\\b(send|submit|post|publish|buy|purchase|pay|transfer|delete|remove|erase|call|dial|confirm|place order|accept|allow|grant|revoke|disable account)\\b")
         return try {
             val matches = root.findAccessibilityNodeInfosByText(query)
             try {
-                val target = matches.firstOrNull { it.isVisibleToUser && (it.isClickable || it.parent?.isClickable == true) }
-                    ?: matches.firstOrNull { it.isVisibleToUser }
-                val clickable = if (target?.isClickable == true) target else target?.parent
+                val target = matches.firstOrNull {
+                    it.isVisibleToUser && (it.isClickable || it.parent?.isClickable == true)
+                } ?: return false
+                // Check the actual control label and its clickable parent, not just the model's search text.
+                var node: AccessibilityNodeInfo? = AccessibilityNodeInfo.obtain(target)
+                var blocked = false
+                try {
+                    repeat(4) {
+                        val current = node ?: return@repeat
+                        val label = listOf(current.text, current.contentDescription)
+                            .filterNotNull().joinToString(" ").trim()
+                        if (sensitiveAction.containsMatchIn(label)) blocked = true
+                        val parent = current.parent
+                        current.recycle()
+                        node = parent
+                    }
+                } finally {
+                    node?.recycle()
+                }
+                if (blocked) return false
+                val clickable = if (target.isClickable) target else target.parent
                 clickable?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true
             } finally {
                 matches.forEach { it.recycle() }
@@ -53,9 +70,11 @@ class DeviceControlAccessibilityService : AccessibilityService() {
         val root = rootInActiveWindow ?: return false
         return try {
             val matches = if (query.isBlank()) emptyList() else root.findAccessibilityNodeInfosByText(query)
-            val target = matches.firstOrNull { it.isVisibleToUser && it.isEditable }?.let { AccessibilityNodeInfo.obtain(it) }
+            val target = matches.firstOrNull { it.isVisibleToUser && it.isEditable && !it.isPassword }?.let { AccessibilityNodeInfo.obtain(it) }
                 ?: findEditable(root)
             try {
+                // Never write into password/credential fields through the generic text tool.
+                if (target?.isPassword == true) return false
                 target?.performAction(
                     AccessibilityNodeInfo.ACTION_SET_TEXT,
                     Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, value) }
